@@ -1,26 +1,156 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* CRITICAL: Force scrolling to always work on every page */
+html {
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  scroll-behavior: auto !important;
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  overflow-y: visible !important;
+  overflow-x: hidden !important;
+  min-height: 100vh;
+  height: auto !important;
+  max-height: none !important;
+  position: relative;
+  background: var(--background-dark);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure main containers never prevent scrolling */
+#__next {
+  min-height: 100vh;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+:root {
+  /* ORAH Brand Colors - Dark Theme */
+  --background-dark: #0A0A0F;
+  --surface-dark: #1A1A2E;
+  --surface-light: #252538;
+  --surface-card: #2A2A40;
+  
+  /* Gradients */
+  --gradient-start: #00C6FF;
+  --gradient-mid: #5B9EFF;
+  --gradient-end: #A855F7;
+  
+  /* Accent Colors */
+  --primary-blue: #5B9EFF;
+  --primary-purple: #8B5CF6;
+  --success-green: #10B981;
+  --danger-red: #EF4444;
+  --warning-yellow: #F59E0B;
+  
+  /* Text Colors */
+  --text-primary: #FFFFFF;
+  --text-secondary: #A0A0B8;
+  --text-muted: #6B6B85;
+  
+  /* Glow Effects */
+  --glow-cyan: rgba(0, 198, 255, 0.4);
+  --glow-purple: rgba(168, 85, 247, 0.4);
+  --glow-blue: rgba(91, 158, 255, 0.3);
+}
+
+@theme inline {
+  --color-background: var(--background-dark);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  
+  /* Custom ORAH Colors */
+  --color-orah-bg-dark: #0A0A0F;
+  --color-orah-surface: #1A1A2E;
+  --color-orah-surface-light: #252538;
+  --color-orah-card: #2A2A40;
+  
+  --color-orah-gradient-start: #00C6FF;
+  --color-orah-gradient-mid: #5B9EFF;
+  --color-orah-gradient-end: #A855F7;
+  
+  --color-orah-blue: #5B9EFF;
+  --color-orah-purple: #8B5CF6;
+  --color-orah-green: #10B981;
+  --color-orah-red: #EF4444;
+  --color-orah-yellow: #F59E0B;
+  
+  --color-orah-text: #FFFFFF;
+  --color-orah-text-secondary: #A0A0B8;
+  --color-orah-text-muted: #6B6B85;
+  }
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+
+/* Gradient Background Animation */
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Rainbow Gradient Flow Animation */
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.gradient-bg {
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-mid), var(--gradient-end));
+  background-size: 200% 200%;
+  animation: gradient-shift 10s ease infinite;
+}
+
+/* Glassmorphism Card */
+.glass-card {
+  background: rgba(42, 42, 64, 0.6);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-light);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-blue);
+}
+
+/* Selection */
+::selection {
+  background: var(--primary-blue);
+  color: white;
 }

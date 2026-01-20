@@ -1,0 +1,411 @@
+/* Task Detail Page Styles */
+
+:root {
+  --bg-dark: #0B0D12;
+  --bg-card: #13151C;
+  --bg-elevated: #1A1D26;
+  --bg-hover: #1E2129;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-glow: rgba(168, 85, 247, 0.2);
+  
+  --primary-purple: #A855F7;
+  --primary-pink: #EC4899;
+  --primary-cyan: #06B6D4;
+  --primary-orange: #F59E0B;
+  --primary-green: #10B981;
+  
+  --text-primary: #FFFFFF;
+  --text-secondary: #9CA3AF;
+  --text-tertiary: #6B7280;
+  
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.32);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.48);
+}
+
+/* Note: Body styles are set globally in globals.css */
+
+/* Background */
+.noise-bg {
+  position: fixed;
+  inset: 0;
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(168, 85, 247, 0.08), transparent),
+    radial-gradient(ellipse 60% 50% at 80% 50%, rgba(6, 182, 212, 0.05), transparent);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.noise-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.5;
+}
+
+/* Container */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Back Button */
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  margin-bottom: 2rem;
+  width: fit-content;
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.back-btn:hover {
+  background: var(--bg-hover);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  transform: translateX(-2px);
+}
+
+.back-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Task Card */
+.task-card {
+  background: linear-gradient(135deg, rgba(26, 29, 38, 0.6), rgba(19, 21, 28, 0.8));
+  border: 1px solid var(--border-glow);
+  border-radius: 24px;
+  padding: 3rem;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(40px);
+  box-shadow: 
+    var(--shadow-xl),
+    0 0 0 1px rgba(168, 85, 247, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+  margin-bottom: 2rem;
+}
+
+.task-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(168, 85, 247, 0.15), transparent);
+  pointer-events: none;
+}
+
+/* Task Header */
+.task-header {
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.task-title {
+  font-family: 'Syne', var(--font-syne), sans-serif;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  margin-bottom: 1rem;
+}
+
+.task-description {
+  font-size: 1.125rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+/* Info Grid */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+  padding-bottom: 2.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.info-item {
+  position: relative;
+}
+
+.info-label {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.info-value {
+  font-family: 'Syne', var(--font-syne), sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.info-value.highlight {
+  background: linear-gradient(135deg, var(--primary-cyan), var(--primary-purple));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.info-value-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Section */
+.section {
+  margin-bottom: 2.5rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.section-title {
+  font-family: 'Syne', var(--font-syne), sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.progress-badge {
+  padding: 0.375rem 0.875rem;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 100px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary-purple);
+  transition: all 0.3s;
+}
+
+.section-text {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+/* Checkpoints */
+.checkpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.checkpoint-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.checkpoint-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(168, 85, 247, 0.3);
+  transform: translateX(4px);
+}
+
+.checkpoint-item.completed {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.checkpoint-checkbox {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-subtle);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.3s;
+  margin-top: 0.125rem;
+}
+
+.checkpoint-item.completed .checkpoint-checkbox {
+  background: linear-gradient(135deg, var(--primary-green), #059669);
+  border-color: var(--primary-green);
+}
+
+.checkpoint-checkbox svg {
+  width: 14px;
+  height: 14px;
+  stroke: white;
+  stroke-width: 3;
+  opacity: 0;
+  transform: scale(0);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.checkpoint-item.completed .checkpoint-checkbox svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.checkpoint-text {
+  flex: 1;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.checkpoint-item.completed .checkpoint-text {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
+/* Work Button */
+.work-button-container {
+  position: sticky;
+  bottom: 2rem;
+  margin-top: auto;
+  padding-top: 2rem;
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
+.btn-work {
+  width: 100%;
+  padding: 1.25rem 2rem;
+  background: linear-gradient(135deg, var(--primary-purple), var(--primary-pink));
+  border: none;
+  border-radius: 16px;
+  color: white;
+  font-size: 1.125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  box-shadow: 
+    0 0 0 0 rgba(168, 85, 247, 0),
+    0 12px 32px -8px rgba(168, 85, 247, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-work::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #B565FF 0%, #FF5CAA 100%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.btn-work:hover::before {
+  opacity: 1;
+}
+
+.btn-work:hover {
+  transform: translateY(-3px);
+  box-shadow: 
+    0 0 0 6px rgba(168, 85, 247, 0.12),
+    0 20px 48px -8px rgba(168, 85, 247, 0.7);
+}
+
+.btn-work:active {
+  transform: translateY(-1px);
+}
+
+.btn-work span {
+  position: relative;
+  z-index: 1;
+}
+
+.btn-work svg {
+  width: 24px;
+  height: 24px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .container {
+    padding: 1.5rem;
+  }
+
+  .task-card {
+    padding: 2rem;
+  }
+
+  .task-title {
+    font-size: 1.5rem;
+  }
+
+  .task-description {
+    font-size: 1rem;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .info-value {
+    font-size: 1.25rem;
+  }
+
+  .checkpoint-item {
+    padding: 1rem;
+  }
+
+  .btn-work {
+    padding: 1rem 1.5rem;
+    font-size: 1rem;
+  }
+}
+
