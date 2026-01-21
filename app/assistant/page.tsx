@@ -54,7 +54,7 @@ export default function AssistantPage() {
     const textToSend = messageText || input.trim()
     if (!textToSend || loading) return
     
-    const newMessages = [...messages, { role: 'user', content: textToSend }]
+    const newMessages: Message[] = [...messages, { role: 'user' as const, content: textToSend }]
     setMessages(newMessages)
     setInput('')
     setLoading(true)
@@ -73,7 +73,7 @@ export default function AssistantPage() {
       if (!data?.reply) {
         throw new Error('Empty response from Orah.')
       }
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: data.reply }])
     } catch (e: any) {
       setError(e.message || 'Something went wrong.')
     } finally {
