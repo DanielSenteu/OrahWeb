@@ -124,8 +124,8 @@ export default function LectureNotesPage() {
     if (!error && data) {
       const history: QaMessage[] = []
       data.forEach((item) => {
-        history.push({ role: 'user', content: item.question })
-        history.push({ role: 'assistant', content: item.answer })
+        history.push({ role: 'user' as const, content: item.question })
+        history.push({ role: 'assistant' as const, content: item.answer })
       })
       setQaMessages(history)
     }
@@ -281,7 +281,8 @@ export default function LectureNotesPage() {
     setQaInput('')
     setIsAsking(true)
 
-    const nextMessages = [...qaMessages, { role: 'user', content: question }]
+    const userMessage: QaMessage = { role: 'user' as const, content: question }
+    const nextMessages = [...qaMessages, userMessage]
     setQaMessages(nextMessages)
 
     try {
@@ -296,15 +297,14 @@ export default function LectureNotesPage() {
         throw new Error(data?.error || 'Failed to answer question')
       }
 
-      setQaMessages([...nextMessages, { role: 'assistant', content: data.reply }])
+      const assistantMessage: QaMessage = { role: 'assistant' as const, content: data.reply }
+      setQaMessages([...nextMessages, assistantMessage])
     } catch (error: any) {
-      setQaMessages([
-        ...nextMessages,
-        {
-          role: 'assistant',
-          content: error?.message || 'Sorry, I could not answer that right now.',
-        },
-      ])
+      const errorMessage: QaMessage = {
+        role: 'assistant' as const,
+        content: error?.message || 'Sorry, I could not answer that right now.',
+      }
+      setQaMessages([...nextMessages, errorMessage])
     } finally {
       setIsAsking(false)
     }

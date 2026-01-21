@@ -285,7 +285,7 @@ export default function AssistantPage() {
             <button
               className="send-btn"
               id="sendBtn"
-              onClick={send}
+              onClick={() => send()}
               disabled={loading || !input.trim() || canEndConversation}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
