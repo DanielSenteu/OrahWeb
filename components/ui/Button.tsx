@@ -1,13 +1,14 @@
 'use client'
 
 import { ButtonHTMLAttributes, forwardRef } from 'react'
-import { motion } from 'framer-motion'
+import { motion, HTMLMotionProps } from 'framer-motion'
 import { cn } from '@/lib/utils/cn'
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps extends Omit<HTMLMotionProps<'button'>, 'disabled'> {
   variant?: 'primary' | 'secondary' | 'success' | 'danger' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
   isLoading?: boolean
+  disabled?: boolean
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
