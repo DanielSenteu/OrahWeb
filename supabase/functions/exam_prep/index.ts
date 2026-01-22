@@ -31,11 +31,115 @@ interface StudyTask {
   checkpoints: string[]
 }
 
-const formatYmd = (date: Date): string => {
+const formatYmd = (date: Date, tz?: string): string => {
+  if (tz) {
+    // Format in user's timezone
+    const formatter = new Intl.DateTimeFormat("en-CA", { // en-CA gives YYYY-MM-DD format
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    })
+    return formatter.format(date)
+  }
+  // Fallback to local timezone
   const yyyy = date.getFullYear()
   const mm = `${date.getMonth() + 1}`.padStart(2, "0")
   const dd = `${date.getDate()}`.padStart(2, "0")
   return `${yyyy}-${mm}-${dd}`
+}
+
+// Simple date arithmetic - add days to YYYY-MM-DD string, return YYYY-MM-DD string
+// NO timezone conversions - just pure date math
+const addDaysToDateString = (dateStr: string, days: number): string => {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  // Simple date arithmetic using JavaScript Date (local time, no timezone conversion)
+  const date = new Date(year, month - 1, day + days)
+  const yyyy = date.getFullYear()
+  const mm = `${date.getMonth() + 1}`.padStart(2, "0")
+  const dd = `${date.getDate()}`.padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Get today's date as YYYY-MM-DD string - simple, no timezone conversions
+const getTodayString = (): string => {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = `${now.getMonth() + 1}`.padStart(2, "0")
+  const dd = `${now.getDate()}`.padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Parse YYYY-MM-DD date string as midnight in user's timezone (not UTC)
+const parseLocalDate = (dateStr: string, tz: string): Date => {
+  // Validate date string format
+  if (!dateStr || typeof dateStr !== 'string') {
+    throw new Error(`Invalid date string: ${dateStr}`)
+  }
+  
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) {
+    throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`)
+  }
+  
+  const [year, month, day] = parts.map(Number)
+  
+  // Validate date components
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    throw new Error(`Invalid date components: ${dateStr}`)
+  }
+  
+  if (year < 1900 || year > 2100) {
+    throw new Error(`Invalid year: ${year}`)
+  }
+  
+  if (month < 1 || month > 12) {
+    throw new Error(`Invalid month: ${month}`)
+  }
+  
+  if (day < 1 || day > 31) {
+    throw new Error(`Invalid day: ${day}`)
+  }
+  
+  const utcNoon = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0))
+  
+  // Check if date is valid
+  if (isNaN(utcNoon.getTime())) {
+    throw new Error(`Invalid date created from: ${dateStr}`)
+  }
+  
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      hour12: false
+    })
+    const formatParts = formatter.formatToParts(utcNoon)
+    const hourPart = formatParts.find(p => p.type === 'hour')
+    
+    if (!hourPart) {
+      throw new Error(`Could not extract hour from date: ${dateStr}`)
+    }
+    
+    const tzHour = parseInt(hourPart.value)
+    if (isNaN(tzHour)) {
+      throw new Error(`Invalid hour value: ${hourPart.value}`)
+    }
+    
+    const offsetHours = 12 - tzHour
+    const result = new Date(Date.UTC(year, month - 1, day, offsetHours, 0, 0, 0))
+    
+    // Validate result
+    if (isNaN(result.getTime())) {
+      throw new Error(`Invalid date result from: ${dateStr}`)
+    }
+    
+    return result
+  } catch (error) {
+    // Fallback: if timezone formatting fails, use simple UTC date
+    console.warn(`Timezone formatting failed for ${dateStr}, using UTC fallback:`, error)
+    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
+  }
 }
 
 const getLocalToday = (tz: string): Date => {
@@ -94,7 +198,7 @@ serve(async (req) => {
     console.log("📚 Exam Prep: Creating study plan...")
 
     const today = getLocalToday(userTimeZone)
-    const examDateObj = new Date(examDate)
+    const examDateObj = parseLocalDate(examDate, userTimeZone)
     const daysAvailable = daysBetween(today, examDateObj)
     const minutesPerDay = hoursPerDay * 60
 
@@ -117,17 +221,32 @@ ${studyMaterials ? `\nSTUDY MATERIALS PROVIDED BY STUDENT:\n${studyMaterials}\n\
 YOUR MISSION:
 Create a study plan that:
 1. **Covers EVERY SINGLE ONE of the ${totalChapters} chapters** (Chapter 1, 2, 3, 4, 5... up to ${totalChapters})
-   - Each chapter must appear in at least 2 tasks (learn + review)
-   - Strong chapters: 2 tasks minimum
-   - Weak chapters: 3+ tasks
+   - **CRITICAL: If time is limited (≤7 days), you MUST cover ALL chapters even if it means multiple tasks per day**
+   - Each chapter must appear in at least 1 task (minimum)
+   - Strong chapters: 1-2 tasks
+   - Weak chapters: 2-3 tasks (more if time allows)
 2. Prioritizes weak chapters (${weakChapters || 'none'}) AND weak topics (${weakTopics || 'none'})
-3. Uses SPACED REPETITION:
-   - Days 1-50%: Learn all chapters sequentially (Chapter 1, 2, 3, 4, 5...)
-   - Days 50-80%: Practice and review all chapters (focus more on weak ones)
-   - Days 80-95%: Mock exams covering ALL chapters
-   - Days 95-100%: Light final review
+3. **ADAPTIVE STRATEGY BASED ON TIME:**
+   
+   **IF ${daysAvailable} ≤ 7 days (LIMITED TIME):**
+   - **COVERAGE IS PRIORITY #1** - Every chapter must appear at least once
+   - You can create MULTIPLE tasks per day if needed to cover all chapters
+   - Day 1: Cover as many chapters as possible (e.g., Chapters 1-2, or 1-3 if time allows)
+   - Day 2: Cover remaining chapters (e.g., Chapters 3-5, or 4-5)
+   - Day 3+: Review weak chapters, practice problems, mock exams
+   - **Example for 3 days, 5 chapters:**
+     - Day 1: Chapter 1 (learn) + Chapter 2 (learn) [2 tasks if needed]
+     - Day 2: Chapter 3 (learn) + Chapter 4 (learn) + Chapter 5 (learn) [3 tasks if needed]
+     - Day 3: Review weak chapters + quick review all chapters
+   
+   **IF ${daysAvailable} > 7 days (ADEQUATE TIME):**
+   - Use SPACED REPETITION:
+     - Days 1-50%: Learn all chapters sequentially (Chapter 1, 2, 3, 4, 5...)
+     - Days 50-80%: Practice and review all chapters (focus more on weak ones)
+     - Days 80-95%: Mock exams covering ALL chapters
+     - Days 95-100%: Light final review
 4. Has SPECIFIC tasks based on study materials (if provided)
-5. Includes 1-2 comprehensive mock exams 3-4 days before real exam
+5. Includes 1-2 comprehensive mock exams covering ALL chapters (if ${daysAvailable} ≥ 4 days, otherwise skip or make it very short)
 
 TASK STRUCTURE RULES:
 
@@ -144,13 +263,21 @@ Use generic chapter numbers ONLY:
 - "Chapter 2: Initial Study"
 - DO NOT invent topics like "Data Structures" or "Recursion"
 
-**Spaced Repetition Pattern:**
+**Study Patterns:**
+
+**For LIMITED TIME (≤7 days):**
+- Day 1: Chapter 1 (learn) + Chapter 2 (learn) [multiple tasks per day OK]
+- Day 2: Chapter 3 (learn) + Chapter 4 (learn) [multiple tasks per day OK]
+- Day 3: Chapter 5 (learn) + Review weak chapters
+- Continue covering ALL chapters, then review
+
+**For ADEQUATE TIME (>7 days):**
 - Day 1: Chapter 1 - Learn
 - Day 2: Chapter 2 - Learn
 - Day 3: Chapter 1 - Practice (REVIEW)
 - Day 4: Chapter 3 - Learn
 - Day 5: Chapter 2 - Practice (REVIEW)
-- Continue this pattern
+- Continue spaced repetition pattern
 
 **Mock Exams:**
 - Include 1-2 mock exams covering all chapters 3-4 days before exam
@@ -165,7 +292,7 @@ RETURN THIS JSON:
       "dayNumber": 1,
       "title": "Chapter 1: [Topic] - Core Concepts",
       "description": "First exposure - focus on understanding, not memorization",
-      "estimatedMinutes": ${minutesPerDay},
+      "estimatedMinutes": ${daysAvailable <= 7 ? Math.floor(minutesPerDay / 2) : minutesPerDay},
       "deliverable": "Notes + concept map for Chapter 1",
       "chapter": "Chapter 1",
       "taskType": "learn",
@@ -175,7 +302,17 @@ RETURN THIS JSON:
         "Work through 3 example problems",
         "Summarize in your own words"
       ]
-    },
+    }${daysAvailable <= 7 ? `,
+    {
+      "dayNumber": 1,
+      "title": "Chapter 2: [Topic] - Core Concepts",
+      "description": "Continue covering all chapters - multiple tasks per day OK with limited time",
+      "estimatedMinutes": ${Math.floor(minutesPerDay / 2)},
+      "deliverable": "Notes for Chapter 2",
+      "chapter": "Chapter 2",
+      "taskType": "learn",
+      "checkpoints": ["..."]
+    }` : ''},
     {
       "dayNumber": 2,
       ...
@@ -215,27 +352,56 @@ RETURN THIS JSON:
 
 CRITICAL RULES - FOLLOW EXACTLY:
 1. Create task for EVERY day (day 1 to day ${daysAvailable})
+   - **IF ${daysAvailable} ≤ 7 days: You can create MULTIPLE tasks per day to cover all chapters**
+   - **IF ${daysAvailable} > 7 days: One task per day is fine**
 2. **MANDATORY: Cover ALL ${totalChapters} chapters from Chapter 1 to Chapter ${totalChapters}**
    - If totalChapters = 5, you MUST have tasks for: Chapter 1, Chapter 2, Chapter 3, Chapter 4, AND Chapter 5
    - Missing even ONE chapter = FAILURE
-   - Every chapter gets AT LEAST one "Learn" task and one "Review" task
-3. Weak chapters (${weakChapters || 'none'}) get EXTRA practice tasks (3+ reviews instead of 2)
+   - **With limited time (≤7 days): Every chapter gets AT LEAST one task (can be learn OR review)**
+   - **With adequate time (>7 days): Every chapter gets AT LEAST one "Learn" task and one "Review" task**
+   - **NO EXCEPTIONS - ALL chapters must appear in the plan**
+3. Weak chapters (${weakChapters || 'none'}) get EXTRA practice tasks (2-3+ reviews instead of 1-2)
 4. Weak topics (${weakTopics || 'none'}) get MORE focused practice time - but still cover strong chapters too
-5. Include 1-2 mock exams covering ALL ${totalChapters} chapters 3-4 days before real exam
-6. If study materials provided: Use SPECIFIC topics from those materials ONLY
-7. If NO study materials: Use generic "Chapter X" format - DO NOT invent chapter names or topics
-8. Distribute learning for ALL ${totalChapters} chapters across first 50% of days
-9. Second 30% of days: Practice and review for ALL chapters (prioritize weak ones)
-10. Final 20%: Mock exams + final review of all chapters
-11. Last day before exam = light review only (30-60 min)
-12. Exam day = motivational task only
+   - **IMPORTANT: Emphasizing weak topics does NOT mean skipping other topics**
+   - ALL topics must be covered, weak ones just get extra time
+5. **TIME-SENSITIVE ADAPTATION:**
+   - **If ${daysAvailable} ≤ 3 days:** Cover ALL chapters in first 2 days (multiple tasks per day), review on day 3
+   - **If ${daysAvailable} = 4-7 days:** Cover ALL chapters in first ${Math.ceil(totalChapters / 2)} days, then review/practice
+   - **If ${daysAvailable} > 7 days:** Use spaced repetition (learn all, then review all)
+6. Include 1-2 mock exams covering ALL ${totalChapters} chapters (only if ${daysAvailable} ≥ 4 days)
+7. If study materials provided: Use SPECIFIC topics from those materials ONLY
+8. If NO study materials: Use generic "Chapter X" format - DO NOT invent chapter names or topics
+9. **COVERAGE PRIORITY:**
+   - **First priority:** Ensure EVERY chapter appears at least once
+   - **Second priority:** Review weak chapters if time allows
+   - **Third priority:** Spaced repetition (only if time is adequate)
+10. Last day before exam = light review only (30-60 min) OR continue covering if not all chapters done
+11. Exam day = motivational task only
+
+**ABSOLUTE REQUIREMENT - NO EXCEPTIONS:**
+- You MUST create tasks that explicitly mention EVERY chapter from 1 to ${totalChapters}
+- If you only cover chapters 1-3 when totalChapters = 5, the plan is INVALID
+- **With limited time (${daysAvailable} days), you MUST create multiple tasks per day if needed to cover all ${totalChapters} chapters**
+- **Example: If ${daysAvailable} = 3 days and totalChapters = 5:**
+  - Day 1: Chapter 1 task + Chapter 2 task (2 tasks)
+  - Day 2: Chapter 3 task + Chapter 4 task + Chapter 5 task (3 tasks)
+  - Day 3: Review weak chapters + quick review all
+- Weak topics get EXTRA attention, but ALL topics must be covered
+- Before returning JSON, verify: Chapter 1 ✓, Chapter 2 ✓, Chapter 3 ✓, ... Chapter ${totalChapters} ✓
 
 VALIDATION CHECKLIST before returning JSON:
-- ✓ Chapter 1 covered? (at least 1 task)
-- ✓ Chapter 2 covered? (at least 1 task)
-- ✓ ...continue for ALL ${totalChapters} chapters
-- ✓ Weak chapters have 3+ tasks?
-- ✓ Mock exam includes ALL chapters?
+- ✓ Chapter 1 covered? (at least 1 task) - VERIFY IN JSON
+- ✓ Chapter 2 covered? (at least 1 task) - VERIFY IN JSON
+- ✓ Chapter 3 covered? (at least 1 task) - VERIFY IN JSON
+${Array.from({length: totalChapters - 3}, (_, i) => `- ✓ Chapter ${i + 4} covered? (at least 1 task) - VERIFY IN JSON`).join('\n')}
+- ✓ Chapter ${totalChapters} covered? (at least 1 task) - VERIFY IN JSON
+- ✓ If ${daysAvailable} ≤ 7 days: Multiple tasks per day created to cover all chapters?
+- ✓ Weak chapters have extra tasks?
+- ✓ Mock exam includes ALL ${totalChapters} chapters? (if ${daysAvailable} ≥ 4 days)
+- ✓ NO chapters are missing from the plan?
+- ✓ ALL ${totalChapters} chapters explicitly mentioned in task titles or chapter fields?
+
+**FINAL CHECK:** Count how many unique chapters appear in your dailyTasks. It MUST equal ${totalChapters}. If it's less, you're missing chapters - ADD THEM NOW, even if it means multiple tasks per day.
 
 Return ONLY valid JSON with the complete study plan.`
 
@@ -320,11 +486,23 @@ Return ONLY valid JSON with the complete study plan.`
     // Create tasks
     const tasks: any[] = []
     const checkpoints: any[] = []
-
+    
+    // Get today's date as simple YYYY-MM-DD string - NO timezone conversions
+    const todayStr = getTodayString()
+    console.log(`📅 TODAY: ${todayStr} (simple date, no timezone conversion)`)
+    
     studyPlan.dailyTasks.forEach(task => {
-      const taskDate = new Date(today)
-      taskDate.setDate(taskDate.getDate() + (task.dayNumber - 1))
-      const dateKey = formatYmd(taskDate)
+      // Simple date calculation: dayNumber 1 = today, dayNumber 2 = today + 1, etc.
+      if (task.dayNumber === 1) {
+        // Day 1 = today, use directly
+        var dateKey = todayStr
+      } else {
+        // For day 2+, add (dayNumber - 1) days
+        const daysToAdd = task.dayNumber - 1
+        dateKey = addDaysToDateString(todayStr, daysToAdd)
+      }
+      
+      console.log(`  Task dayNumber ${task.dayNumber} → ${dateKey}`)
 
       const taskId = crypto.randomUUID()
 

@@ -41,7 +41,7 @@ interface CalendarTask {
   isPrep: boolean
 }
 
-// Simple date formatting
+// Simple date formatting - NO timezone conversions, just get YYYY-MM-DD
 const formatYmd = (date: Date): string => {
   const yyyy = date.getFullYear()
   const mm = `${date.getMonth() + 1}`.padStart(2, "0")
@@ -49,12 +49,52 @@ const formatYmd = (date: Date): string => {
   return `${yyyy}-${mm}-${dd}`
 }
 
-// Get today in user's timezone
-const getLocalToday = (tz: string): Date => {
+// Get today's date as YYYY-MM-DD string - simple, no timezone conversions
+const getTodayString = (): string => {
   const now = new Date()
-  const local = new Date(now.toLocaleString("en-US", { timeZone: tz }))
-  local.setHours(0, 0, 0, 0)
-  return local
+  return formatYmd(now)
+}
+
+// Simple date parsing - just parse YYYY-MM-DD to Date object, NO timezone conversions
+const parseDateString = (dateStr: string): Date => {
+  // Validate date string format
+  if (!dateStr || typeof dateStr !== 'string') {
+    throw new Error(`Invalid date string: ${dateStr}`)
+  }
+  
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) {
+    throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`)
+  }
+  
+  const [year, month, day] = parts.map(Number)
+  
+  // Validate date components
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    throw new Error(`Invalid date components: ${dateStr}`)
+  }
+  
+  if (year < 1900 || year > 2100) {
+    throw new Error(`Invalid year: ${year}`)
+  }
+  
+  if (month < 1 || month > 12) {
+    throw new Error(`Invalid month: ${month}`)
+  }
+  
+  if (day < 1 || day > 31) {
+    throw new Error(`Invalid day: ${day}`)
+  }
+  
+  // Simple date creation - no timezone conversion
+  const date = new Date(year, month - 1, day)
+  
+  // Validate
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid date created from: ${dateStr}`)
+  }
+  
+  return date
 }
 
 // Day of week string to number (0 = Sunday)
@@ -71,35 +111,53 @@ const dayOfWeekToNumber = (day: string): number => {
   return map[day.toLowerCase()] ?? -1
 }
 
+// Simple date arithmetic - add days to YYYY-MM-DD string
+const addDaysToDateString = (dateStr: string, days: number): string => {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const date = new Date(year, month - 1, day + days)
+  return formatYmd(date)
+}
+
 // Get all dates for a specific weekday between start and end
-const getWeekdayDates = (startDate: Date, endDate: Date, dayOfWeek: number): Date[] => {
-  const dates: Date[] = []
-  const current = new Date(startDate)
+// Returns dates as YYYY-MM-DD strings - simple, no timezone conversions
+const getWeekdayDates = (startStr: string, endStr: string, dayOfWeek: number): string[] => {
+  const dates: string[] = []
+  const [startYear, startMonth, startDay] = startStr.split('-').map(Number)
   
-  while (current.getDay() !== dayOfWeek && current <= endDate) {
-    current.setDate(current.getDate() + 1)
+  // Start from the start date
+  let currentDate = new Date(startYear, startMonth - 1, startDay)
+  
+  // Find first occurrence of the target weekday
+  while (currentDate.getDay() !== dayOfWeek && formatYmd(currentDate) <= endStr) {
+    currentDate.setDate(currentDate.getDate() + 1)
   }
   
-  while (current <= endDate) {
-    dates.push(new Date(current))
-    current.setDate(current.getDate() + 7)
+  // Collect all occurrences (every 7 days)
+  let currentStr = formatYmd(currentDate)
+  while (currentStr <= endStr) {
+    dates.push(currentStr)
+    currentDate.setDate(currentDate.getDate() + 7)
+    currentStr = formatYmd(currentDate)
   }
   
   return dates
 }
 
 // Get available study dates - X days per week, excluding class days
+// Returns date strings (YYYY-MM-DD), simple, no timezone conversions
 const getAvailableStudyDates = (
-  startDate: Date,
-  endDate: Date,
+  startStr: string,
+  endStr: string,
   daysPerWeek: number,
   classDays: Set<string>
-): Date[] => {
-  const dates: Date[] = []
+): string[] => {
+  const dates: string[] = []
+  const startDate = parseDateString(startStr)
+  const endDate = parseDateString(endStr)
   const current = new Date(startDate)
   
   // Group dates by week
-  const weekMap: Map<number, Date[]> = new Map()
+  const weekMap: Map<number, string[]> = new Map()
   
   while (current <= endDate) {
     const dateKey = formatYmd(current)
@@ -112,7 +170,7 @@ const getAvailableStudyDates = (
       if (!weekMap.has(weekNum)) {
         weekMap.set(weekNum, [])
       }
-      weekMap.get(weekNum)!.push(new Date(current))
+      weekMap.get(weekNum)!.push(dateKey)
     }
     current.setDate(current.getDate() + 1)
   }
@@ -136,23 +194,23 @@ const getAvailableStudyDates = (
     }
   })
   
-  return dates.sort((a, b) => a.getTime() - b.getTime())
+  return dates.sort()
 }
 
 // Create simple work blocks based on user's preferred days/week
 const createWorkBlocks = (
-  availableDates: Date[],
+  availableDates: string[],
   focusDuration: number,
   courseCode: string
 ): CalendarTask[] => {
   const tasks: CalendarTask[] = []
   
-  // Create a simple work block for each available study date
-  availableDates.forEach(date => {
+  // Create a simple work block for each available study date (already YYYY-MM-DD strings)
+  availableDates.forEach(dateStr => {
     tasks.push({
       title: `Work Block: ${courseCode} (${focusDuration} min)`,
       description: `Use this time to work on assignments, review material, or prepare for upcoming quizzes/exams.`,
-      scheduledDate: formatYmd(date),
+      scheduledDate: dateStr,
       estimatedMinutes: focusDuration,
       eventType: "study",
       isPrep: true
@@ -210,11 +268,22 @@ serve(async (req) => {
 
     console.log("🎓 Semester Planner: Extracting events from syllabus...")
 
+    // Get today as simple date string - NO timezone conversions
+    const todayStr = getTodayString()
+    const todayDate = parseDateString(todayStr)
+    const currentYear = todayDate.getFullYear()
+    const currentMonth = todayDate.getMonth() + 1 // 1-12
+
     // Step 1: Use AI to extract events from syllabus
     const extractionPrompt = `You are a syllabus parser. Extract ALL events from this syllabus.
 
 SYLLABUS:
 ${syllabusContent}
+
+CURRENT DATE CONTEXT:
+- Today is ${todayStr}
+- Current year: ${currentYear}
+- Current month: ${currentMonth}
 
 Extract the course information and ALL events into this JSON format. Be VERY precise with dates and times.
 
@@ -229,29 +298,55 @@ Extract the course information and ALL events into this JSON format. Be VERY pre
       "description": "Any details from syllabus",
       "dayOfWeek": "Monday (for recurring events like classes)",
       "time": "10:00 AM (start time if mentioned)",
-      "date": "YYYY-MM-DD (for one-time events)",
+      "date": "YYYY-MM-DD (for one-time events - MUST include full year)",
       "dueTime": "11:59 PM (for assignments)"
     }
   ]
 }
 
-CRITICAL RULES:
+CRITICAL RULES FOR DATE EXTRACTION:
 1. courseName and courseCode MUST be extracted from the syllabus. Look for course titles, codes like "CMPT 310", "CS 101", etc.
 
 2. For RECURRING events (class, tutorial, lab):
-   - Set "dayOfWeek" (e.g., "Monday", "Wednesday")
-   - Set "time" if mentioned
+   - Set "dayOfWeek" (e.g., "Monday", "Wednesday", "Friday")
+   - Set "time" if mentioned (e.g., "11:30 AM", "10:30 AM")
    - Do NOT set "date"
 
 3. For ONE-TIME events (assignment, quiz, midterm, final, project):
-   - Set "date" as YYYY-MM-DD
-   - Set "dueTime" if mentioned
+   - Set "date" as YYYY-MM-DD with FULL YEAR (e.g., "2025-01-28", "2025-02-04")
+   - For dates like "W Jan. 28" or "Jan. 28": Convert to "YYYY-01-28" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
+   - For dates like "Feb. 4" or "W Feb. 4": Convert to "YYYY-02-04" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
+   - For dates like "Mar. 11" or "W Mar. 11": Convert to "YYYY-03-11" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
+   - For dates like "Apr. 8" or "W Apr. 8": Convert to "YYYY-04-08" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
+   - Set "dueTime" if mentioned (e.g., "5:30 PM")
    - Do NOT set "dayOfWeek"
 
-4. Extract EXACT dates from syllabus - don't guess or make up dates
-5. For "Lectures: Mon/Wed 10:00" → Create TWO separate class events (one for Monday, one for Wednesday)
+4. DATE CONVERSION EXAMPLES:
+   - "W Jan. 28" → "2025-01-28" (if current month is Jan or earlier) or "2026-01-28" (if current month is after Jan)
+   - "Feb. 4" → "2025-02-04" (if current month is Feb or earlier) or "2026-02-04" (if current month is after Feb)
+   - "W Mar. 4" → "2025-03-04" (if current month is Mar or earlier) or "2026-03-04" (if current month is after Mar)
+   - "W Apr. 8" → "2025-04-08" (if current month is Apr or earlier) or "2026-04-08" (if current month is after Apr)
 
-Return ONLY valid JSON.`
+5. Extract EXACT dates from syllabus - don't guess or make up dates
+6. For "Lectures: W 11:30am - 12:20pm, F 10:30am - 12:20pm" → Create TWO separate class events:
+   - One with dayOfWeek: "Wednesday", time: "11:30 AM"
+   - One with dayOfWeek: "Friday", time: "10:30 AM"
+
+7. MONTH ABBREVIATIONS:
+   - Jan/Jan. = January (01)
+   - Feb/Feb. = February (02)
+   - Mar/Mar. = March (03)
+   - Apr/Apr. = April (04)
+   - May/May. = May (05)
+   - Jun/Jun. = June (06)
+   - Jul/Jul. = July (07)
+   - Aug/Aug. = August (08)
+   - Sep/Sept/Sep. = September (09)
+   - Oct/Oct. = October (10)
+   - Nov/Nov. = November (11)
+   - Dec/Dec. = December (12)
+
+Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
 
     const extractionResponse = await fetch(OPENAI_URL, {
       method: "POST",
@@ -293,6 +388,16 @@ Return ONLY valid JSON.`
     try {
       extracted = JSON.parse(extractedContent)
       console.log(`✅ Extracted ${extracted.events.length} events from syllabus`)
+      console.log(`📋 Course: ${extracted.courseCode} - ${extracted.courseName}`)
+      
+      // Log extracted events for debugging
+      extracted.events.forEach((event, idx) => {
+        if (event.type === 'class' || event.type === 'tutorial' || event.type === 'lab') {
+          console.log(`  Event ${idx + 1}: ${event.type} - ${event.dayOfWeek} ${event.time || ''}`)
+        } else {
+          console.log(`  Event ${idx + 1}: ${event.type} - ${event.date || 'NO DATE'} - ${event.title}`)
+        }
+      })
     } catch (e) {
       console.error("❌ Failed to parse extracted JSON:", e)
       return new Response(
@@ -301,67 +406,86 @@ Return ONLY valid JSON.`
       )
     }
 
-    // Step 2: Build calendar
-    const today = getLocalToday(userTimeZone)
-    const currentYear = today.getFullYear()
-    
-    let semesterEnd: Date
+    // Step 2: Build calendar - work with date strings, NO timezone conversions
+    let semesterEndStr: string
     if (metadata?.semesterEndDate) {
-      semesterEnd = new Date(metadata.semesterEndDate)
+      semesterEndStr = metadata.semesterEndDate
     } else if (extracted.semesterEndDate) {
-      semesterEnd = new Date(extracted.semesterEndDate)
+      semesterEndStr = extracted.semesterEndDate
     } else {
-      semesterEnd = new Date(today)
-      semesterEnd.setMonth(semesterEnd.getMonth() + 4)
+      // Default to 4 months from today
+      const endDate = new Date(todayDate)
+      endDate.setMonth(endDate.getMonth() + 4)
+      semesterEndStr = formatYmd(endDate)
     }
 
     // FIX: If semester end is in the past, adjust to current/next year
-    if (semesterEnd <= today) {
+    const semesterEndDate = parseDateString(semesterEndStr)
+    if (semesterEndDate <= todayDate) {
       // The syllabus probably has an old year - update to current or next year
-      const extractedMonth = semesterEnd.getMonth()
-      const todayMonth = today.getMonth()
+      const [endYear, endMonth, endDay] = semesterEndStr.split('-').map(Number)
+      const extractedMonth = endMonth
+      const todayMonth = todayDate.getMonth() + 1
       
-      if (extractedMonth >= todayMonth) {
-        // Same year is fine (e.g., today is Jan, semester ends in April)
-        semesterEnd.setFullYear(currentYear)
-      } else {
+      let newYear = currentYear
+      if (extractedMonth < todayMonth) {
         // Semester end month already passed this year, use next year
-        semesterEnd.setFullYear(currentYear + 1)
+        newYear = currentYear + 1
       }
+      
+      semesterEndStr = `${newYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
       
       // If still in the past (edge case), default to 4 months from now
-      if (semesterEnd <= today) {
-        semesterEnd = new Date(today)
-        semesterEnd.setMonth(semesterEnd.getMonth() + 4)
+      const checkDate = parseDateString(semesterEndStr)
+      if (checkDate <= todayDate) {
+        const endDate = new Date(todayDate)
+        endDate.setMonth(endDate.getMonth() + 4)
+        semesterEndStr = formatYmd(endDate)
       }
       
-      console.log(`📅 Adjusted semester end date to: ${formatYmd(semesterEnd)}`)
+      console.log(`📅 Adjusted semester end date to: ${semesterEndStr}`)
     }
 
-    console.log(`📅 Semester: ${formatYmd(today)} to ${formatYmd(semesterEnd)}`)
+    console.log(`📅 Semester: ${todayStr} to ${semesterEndStr}`)
 
     const allTasks: CalendarTask[] = []
     const classDays = new Set<string>()  // Track class days to exclude from study days
 
-    // Helper function to fix event dates with old years
+    // Helper function to fix event dates with old years - simple, no timezone
     const fixEventDate = (dateStr: string): string => {
-      const eventDate = new Date(dateStr)
-      if (eventDate <= today) {
-        const eventMonth = eventDate.getMonth()
-        const todayMonth = today.getMonth()
-        
-        if (eventMonth >= todayMonth) {
-          eventDate.setFullYear(currentYear)
-        } else {
-          eventDate.setFullYear(currentYear + 1)
-        }
-        
-        // If still in the past, it's probably within the next few days - use current year
-        if (eventDate < today) {
-          eventDate.setFullYear(currentYear)
-        }
+      if (!dateStr || typeof dateStr !== 'string' || dateStr.trim() === '') {
+        console.warn(`Invalid date string in fixEventDate: ${dateStr}`)
+        return todayStr // Fallback to today
       }
-      return formatYmd(eventDate)
+      
+      try {
+        const eventDate = parseDateString(dateStr)
+        if (eventDate <= todayDate) {
+          const [year, month, day] = dateStr.split('-').map(Number)
+          const eventMonth = month
+          const todayMonth = todayDate.getMonth() + 1
+          
+          let newYear = currentYear
+          if (eventMonth < todayMonth) {
+            newYear = currentYear + 1
+          }
+          
+          const fixedStr = `${newYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          
+          // If still in the past, use current year
+          const checkDate = parseDateString(fixedStr)
+          if (checkDate < todayDate) {
+            return `${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          }
+          
+          return fixedStr
+        }
+        return dateStr
+      } catch (error) {
+        console.error(`Error fixing event date ${dateStr}:`, error)
+        // Fallback: return today's date
+        return todayStr
+      }
     }
 
     // Step 3: Add FIXED events (classes, tutorials, labs, deadlines)
@@ -371,10 +495,9 @@ Return ONLY valid JSON.`
         if (event.dayOfWeek) {
           const dayNum = dayOfWeekToNumber(event.dayOfWeek)
           if (dayNum >= 0) {
-            const dates = getWeekdayDates(today, semesterEnd, dayNum)
+            const dateStrings = getWeekdayDates(todayStr, semesterEndStr, dayNum)
             
-            for (const date of dates) {
-              const dateKey = formatYmd(date)
+            for (const dateKey of dateStrings) {
               classDays.add(dateKey)  // Track this as a class day
               
               const courseLabel = extracted.courseCode || extracted.courseName
@@ -394,21 +517,37 @@ Return ONLY valid JSON.`
       } else if (event.date) {
         // One-time event (assignment due, quiz, midterm, final)
         // Fix the date if it has an old year
-        const fixedDate = fixEventDate(event.date)
-        
-        allTasks.push({
-          title: event.title,
-          description: event.dueTime ? `Due: ${event.dueTime}. ${event.description || ''}` : (event.description || ''),
-          scheduledDate: fixedDate,
-          estimatedMinutes: event.type === 'final' ? 180 : event.type === 'midterm' ? 120 : 60,
-          eventType: event.type,
-          isPrep: false
-        })
+        // Validate date format (should be YYYY-MM-DD)
+        if (typeof event.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(event.date)) {
+          try {
+            const fixedDate = fixEventDate(event.date)
+            
+            console.log(`  ✓ Added ${event.type}: ${event.title} on ${fixedDate}`)
+            
+            allTasks.push({
+              title: event.title,
+              description: event.dueTime ? `Due: ${event.dueTime}. ${event.description || ''}` : (event.description || ''),
+              scheduledDate: fixedDate,
+              estimatedMinutes: event.type === 'final' ? 180 : event.type === 'midterm' ? 120 : 60,
+              eventType: event.type,
+              isPrep: false
+            })
+          } catch (error) {
+            console.error(`  ✗ Error processing event date ${event.date} for ${event.title}:`, error)
+            // Skip this event if date parsing fails
+          }
+        } else {
+          console.warn(`  ✗ Invalid date format for event "${event.title}": "${event.date}". Expected YYYY-MM-DD format.`)
+          console.warn(`    Event type: ${event.type}, Full event:`, JSON.stringify(event, null, 2))
+          // Skip this event if date format is invalid
+        }
+      } else {
+        console.warn(`  ✗ Event "${event.title}" (type: ${event.type}) has no date or dayOfWeek - skipping`)
       }
     }
 
     // Step 4: Get available study days (X days per week, excluding class days)
-    const availableStudyDates = getAvailableStudyDates(today, semesterEnd, daysPerWeek, classDays)
+    const availableStudyDates = getAvailableStudyDates(todayStr, semesterEndStr, daysPerWeek, classDays)
 
     console.log(`📚 ${availableStudyDates.length} available study dates (${daysPerWeek} days/week, excluding ${classDays.size} class days)`)
 
@@ -427,7 +566,7 @@ Return ONLY valid JSON.`
     const goalSummary = extracted.courseCode && extracted.courseName 
       ? `${extracted.courseCode}: ${extracted.courseName}`
       : (extracted.courseCode || extracted.courseName || "Semester Plan")
-    const totalDays = Math.ceil((semesterEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    const totalDays = Math.ceil((semesterEndDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24))
 
     const { data: goal, error: goalError } = await supabase
       .from("user_goals")
@@ -494,8 +633,8 @@ Return ONLY valid JSON.`
         courseCode: extracted.courseCode,
         eventsExtracted: extracted.events.length,
         tasksCreated: insertedCount,
-        semesterStart: formatYmd(today),
-        semesterEnd: formatYmd(semesterEnd)
+        semesterStart: todayStr,
+        semesterEnd: semesterEndStr
       }),
       {
         status: 200,

@@ -30,10 +30,42 @@ interface TaskBreakdown {
   }>
 }
 
-const formatYmd = (date: Date): string => {
+const formatYmd = (date: Date, tz?: string): string => {
+  if (tz) {
+    // Format in user's timezone
+    const formatter = new Intl.DateTimeFormat("en-CA", { // en-CA gives YYYY-MM-DD format
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    })
+    return formatter.format(date)
+  }
+  // Fallback to local timezone
   const yyyy = date.getFullYear()
   const mm = `${date.getMonth() + 1}`.padStart(2, "0")
   const dd = `${date.getDate()}`.padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Simple date arithmetic - add days to YYYY-MM-DD string, return YYYY-MM-DD string
+// NO timezone conversions - just pure date math
+const addDaysToDateString = (dateStr: string, days: number): string => {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  // Simple date arithmetic using JavaScript Date (local time, no timezone conversion)
+  const date = new Date(year, month - 1, day + days)
+  const yyyy = date.getFullYear()
+  const mm = `${date.getMonth() + 1}`.padStart(2, "0")
+  const dd = `${date.getDate()}`.padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Get today's date as YYYY-MM-DD string - simple, no timezone conversions
+const getTodayString = (): string => {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = `${now.getMonth() + 1}`.padStart(2, "0")
+  const dd = `${now.getDate()}`.padStart(2, "0")
   return `${yyyy}-${mm}-${dd}`
 }
 
@@ -42,6 +74,85 @@ const getLocalToday = (tz: string): Date => {
   const local = new Date(now.toLocaleString("en-US", { timeZone: tz }))
   local.setHours(0, 0, 0, 0)
   return local
+}
+
+// Parse YYYY-MM-DD date string as midnight in user's timezone (not UTC)
+// This prevents dates from shifting by -1 day due to UTC conversion
+const parseLocalDate = (dateStr: string, tz: string): Date => {
+  // Validate date string format
+  if (!dateStr || typeof dateStr !== 'string') {
+    throw new Error(`Invalid date string: ${dateStr}`)
+  }
+  
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) {
+    throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`)
+  }
+  
+  const [year, month, day] = parts.map(Number)
+  
+  // Validate date components
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    throw new Error(`Invalid date components: ${dateStr}`)
+  }
+  
+  if (year < 1900 || year > 2100) {
+    throw new Error(`Invalid year: ${year}`)
+  }
+  
+  if (month < 1 || month > 12) {
+    throw new Error(`Invalid month: ${month}`)
+  }
+  
+  if (day < 1 || day > 31) {
+    throw new Error(`Invalid day: ${day}`)
+  }
+  
+  // Create a date at noon UTC (avoids DST edge cases)
+  const utcNoon = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0))
+  
+  // Check if date is valid
+  if (isNaN(utcNoon.getTime())) {
+    throw new Error(`Invalid date created from: ${dateStr}`)
+  }
+  
+  try {
+    // Get what UTC noon represents in the user's timezone
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      hour12: false
+    })
+    const formatParts = formatter.formatToParts(utcNoon)
+    const hourPart = formatParts.find(p => p.type === 'hour')
+    
+    if (!hourPart) {
+      throw new Error(`Could not extract hour from date: ${dateStr}`)
+    }
+    
+    const tzHour = parseInt(hourPart.value)
+    if (isNaN(tzHour)) {
+      throw new Error(`Invalid hour value: ${hourPart.value}`)
+    }
+    
+    // Calculate offset: if UTC noon = 4 AM in user's timezone, offset is +8 hours
+    // We want midnight in user's timezone, so adjust UTC by the offset
+    const offsetHours = 12 - tzHour
+    
+    // Create UTC date that represents midnight in user's timezone
+    const result = new Date(Date.UTC(year, month - 1, day, offsetHours, 0, 0, 0))
+    
+    // Validate result
+    if (isNaN(result.getTime())) {
+      throw new Error(`Invalid date result from: ${dateStr}`)
+    }
+    
+    return result
+  } catch (error) {
+    // Fallback: if timezone formatting fails, use simple UTC date
+    console.warn(`Timezone formatting failed for ${dateStr}, using UTC fallback:`, error)
+    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
+  }
 }
 
 const daysBetween = (start: Date, end: Date): number => {
@@ -93,7 +204,7 @@ serve(async (req) => {
     console.log("📝 Assignment Helper: Creating task breakdown...")
 
     const today = getLocalToday(userTimeZone)
-    const dueDateObj = new Date(dueDate)
+    const dueDateObj = parseLocalDate(dueDate, userTimeZone)
     const daysAvailable = daysBetween(today, dueDateObj)
     const minutesPerDay = hoursPerDay * 60
 
@@ -108,7 +219,7 @@ ${assignmentContent}
 CONSTRAINTS:
 - Due in ${daysAvailable} days (due date: ${dueDate})
 - Student can work ${hoursPerDay} hours/day (${minutesPerDay} minutes)
-- Today is ${formatYmd(today)}
+- Today is ${formatYmd(today, userTimeZone)}
 
 YOUR MISSION:
 Analyze the assignment and create a day-by-day breakdown with SPECIFIC, ACTIONABLE tasks.
@@ -278,10 +389,23 @@ Analyze the assignment content and return ONLY valid JSON with the task breakdow
     const tasks: any[] = []
     const checkpoints: any[] = []
 
+    // Get today's date as simple YYYY-MM-DD string - NO timezone conversions
+    const todayStr = getTodayString()
+    console.log(`📅 TODAY: ${todayStr} (simple date, no timezone conversion)`)
+    
     breakdown.dailyTasks.forEach((task, index) => {
-      const taskDate = new Date(today)
-      taskDate.setDate(taskDate.getDate() + (task.dayNumber - 1))
-      const dateKey = formatYmd(taskDate)
+      // Simple date calculation: dayNumber 1 = today, dayNumber 2 = today + 1, etc.
+      let dateKey: string
+      if (task.dayNumber === 1) {
+        // Day 1 = today, use directly
+        dateKey = todayStr
+      } else {
+        // For day 2+, add (dayNumber - 1) days
+        const daysToAdd = task.dayNumber - 1
+        dateKey = addDaysToDateString(todayStr, daysToAdd)
+      }
+      
+      console.log(`  Task dayNumber ${task.dayNumber} → ${dateKey}`)
 
       const taskId = crypto.randomUUID()
 
