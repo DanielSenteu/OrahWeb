@@ -355,7 +355,7 @@ Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "gpt-4o-2024-11-20",
         messages: [
           { role: "system", content: "You extract structured data from syllabi. Return ONLY valid JSON." },
           { role: "user", content: extractionPrompt }

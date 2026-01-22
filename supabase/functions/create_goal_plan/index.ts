@@ -1093,7 +1093,7 @@ CRITICAL: Be thorough and comprehensive. Preserve ALL specific details, dates, n
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: "gpt-4o-mini",
+              model: "gpt-4o-mini-2024-07-18",
               messages: [
                 { role: "system", content: "You are an expert at extracting and summarizing information from conversations. Always return valid JSON." },
                 { role: "user", content: summarizePrompt },
@@ -1506,7 +1506,7 @@ Generate the complete plan now. Return ONLY valid JSON.`
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "gpt-4o-2024-11-20",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

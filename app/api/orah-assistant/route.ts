@@ -82,7 +82,7 @@ Rules:
 Remember: when ready to hand off, send END_CONVERSATION as the entire reply.`
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o-mini-2024-07-18',
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages.map((m: any) => ({ role: m.role, content: m.content })),

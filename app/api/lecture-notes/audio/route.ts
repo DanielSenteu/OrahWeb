@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     console.log('📝 Generating organized notes...')
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o-mini-2024-07-18',
       messages: [
         {
           role: 'system',

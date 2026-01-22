@@ -324,7 +324,7 @@ Analyze the assignment content and return ONLY valid JSON with the task breakdow
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "gpt-4o-2024-11-20",
         messages: [
           { role: "system", content: "You are an expert at breaking down assignments into specific, actionable tasks. Return ONLY valid JSON." },
           { role: "user", content: breakdownPrompt }

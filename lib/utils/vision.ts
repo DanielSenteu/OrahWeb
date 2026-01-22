@@ -11,7 +11,7 @@ export async function extractTextFromImage(
 ): Promise<string> {
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-4o-2024-11-20',
       messages: [
         {
           role: 'user',

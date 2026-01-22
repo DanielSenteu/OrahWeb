@@ -412,7 +412,7 @@ Return ONLY valid JSON with the complete study plan.`
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "gpt-4o-2024-11-20",
         messages: [
           { role: "system", content: "You create specific, actionable exam study plans. Return ONLY valid JSON." },
           { role: "user", content: studyPlanPrompt }
