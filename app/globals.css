@@ -22,10 +22,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Mobile: Add padding for bottom navigation */
+/* Mobile: Add padding for bottom navigation + progress bar */
 @media (max-width: 767px) {
   body {
-    padding-bottom: 70px;
+    padding-bottom: 140px; /* Bottom nav (70px) + Progress bar (~70px) */
   }
 }
 
@@ -33,7 +33,7 @@ body {
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   @media (max-width: 767px) {
     body {
-      padding-bottom: calc(70px + env(safe-area-inset-bottom));
+      padding-bottom: calc(140px + env(safe-area-inset-bottom));
     }
   }
 }
