@@ -388,6 +388,15 @@ CRITICAL RULES FOR DATE EXTRACTION:
       * dayOfWeek: "Friday" (NOT Wednesday)
     - Common mistake: "W" does NOT mean Monday. "W" = Wednesday, "F" = Friday, "M" = Monday
 
+12. FINAL VALIDATION CHECKLIST (MUST COMPLETE BEFORE RETURNING JSON):
+    - [ ] Did I extract class days ONLY from the "Lectures:" or "Class Times:" section?
+    - [ ] If the syllabus shows "W" (Wednesday abbreviation), did I extract "Wednesday" (NOT "Monday")?
+    - [ ] If the syllabus shows "F" (Friday abbreviation), did I extract "Friday" (NOT "Wednesday")?
+    - [ ] If I see "W" and "F" together, did I extract "Wednesday" and "Friday" (NOT "Monday" and "Wednesday")?
+    - [ ] Did I ignore mentions of days in other contexts (like "No class on Monday")?
+    
+    CRITICAL: If you extracted "Monday" when the syllabus says "W", you made an error. "W" = Wednesday, always.
+
 Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
 
     const extractionResponse = await fetch(OPENAI_URL, {
@@ -440,6 +449,21 @@ Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
           console.log(`  Event ${idx + 1}: ${event.type} - ${event.date || 'NO DATE'} - ${event.title}`)
         }
       })
+      
+      // VALIDATION: Check for common day extraction errors
+      const classEvents = extracted.events.filter(e => e.type === 'class' && e.dayOfWeek)
+      if (classEvents.length >= 2) {
+        const days = classEvents.map(e => e.dayOfWeek?.toLowerCase() || '')
+        const hasMonday = days.includes('monday')
+        const hasWednesday = days.includes('wednesday')
+        const hasFriday = days.includes('friday')
+        
+        // If we see Monday + Wednesday but no Friday, this might be wrong (should be Wednesday + Friday)
+        if (hasMonday && hasWednesday && !hasFriday) {
+          console.warn(`⚠️  WARNING: Extracted Monday + Wednesday for classes. If syllabus says "W" and "F", this should be Wednesday + Friday!`)
+          console.warn(`    Check the syllabus - "W" = Wednesday, "F" = Friday, NOT Monday + Wednesday`)
+        }
+      }
     } catch (e) {
       console.error("❌ Failed to parse extracted JSON:", e)
       return new Response(

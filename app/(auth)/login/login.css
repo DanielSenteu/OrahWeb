@@ -389,21 +389,68 @@
 
 /* Responsive */
 @media (max-width: 640px) {
-  .login-container {
-    padding: 1.5rem;
-    margin-top: 5rem;
+  .login-page {
+    padding: 1rem;
+    justify-content: flex-start;
+    padding-top: 2rem;
   }
 
-  .login-card {
-    padding: 2rem;
+  .login-container {
+    padding: 1rem;
+    margin-top: 0;
+    max-width: 100%;
+  }
+
+  .logo {
+    margin-bottom: 2rem;
   }
 
   .logo-text {
-    font-size: 3rem;
+    font-size: 2.5rem;
+  }
+
+  .logo-subtitle {
+    font-size: 1rem;
+  }
+
+  .login-card {
+    padding: 2rem 1.5rem;
+  }
+
+  .card-header {
+    margin-bottom: 1.5rem;
   }
 
   .card-title {
-    font-size: 1.75rem;
+    font-size: 1.5rem;
+  }
+
+  .card-subtitle {
+    font-size: 0.9375rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  .form-input {
+    padding: 0.875rem 1rem;
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  .btn {
+    padding: 0.875rem;
+    font-size: 1rem;
+    min-height: 48px;
+  }
+
+  .btn-gmail {
+    min-height: 48px;
+  }
+
+  .signup-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
   }
 }
 
