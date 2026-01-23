@@ -148,14 +148,8 @@ nav {
   margin: 0 auto;
   padding: 6rem 2rem 10rem;
   position: relative;
-  z-index: 10;
+  z-index: 100;
   box-sizing: border-box;
-  pointer-events: auto;
-  isolation: isolate; /* Create new stacking context */
-}
-
-.container * {
-  pointer-events: auto;
 }
 
 /* Active Goal Header */
