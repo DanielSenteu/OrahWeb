@@ -43,6 +43,14 @@ body {
   min-height: 100vh;
   height: auto !important;
   overflow: visible !important;
+  position: relative;
+}
+
+/* Mobile: Ensure top nav doesn't block content */
+@media (max-width: 767px) {
+  #__next {
+    padding-top: 0 !important;
+  }
 }
 
 :root {

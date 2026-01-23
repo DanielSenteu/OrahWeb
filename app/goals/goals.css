@@ -592,8 +592,8 @@ nav {
 /* Responsive */
 @media (max-width: 768px) {
   .container {
-    padding: 1rem 1.5rem calc(70px + 1rem);
-    padding-top: 1rem;
+    padding: calc(60px + 1rem) 1.5rem calc(70px + 1rem);
+    padding-top: calc(60px + 1rem);
   }
 
   .page-title {

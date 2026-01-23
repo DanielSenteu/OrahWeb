@@ -472,14 +472,25 @@ nav {
 /* Progress Bar */
 .progress-section {
   position: fixed;
-  bottom: 0;
+  bottom: 70px; /* Above bottom nav */
   left: 0;
   right: 0;
   background: rgba(11, 13, 18, 0.95);
   backdrop-filter: blur(20px) saturate(180%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   padding: 1.25rem 2rem;
-  z-index: 999; /* Below bottom nav */
+  z-index: 998; /* Below bottom nav */
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+@media (max-width: 768px) {
+  .progress-section {
+    bottom: 70px !important; /* Above bottom nav on mobile - force it */
+    position: fixed !important;
+    transform: translateZ(0) !important;
+  }
 }
 
 .progress-container {
@@ -637,14 +648,10 @@ nav {
 /* Responsive */
 @media (max-width: 768px) {
   .container {
-    padding: 0.5rem 1.5rem calc(140px + 1rem); /* Space for bottom nav + progress bar */
-    padding-top: 0.5rem; /* Minimal top padding */
-  }
-
-  .progress-section {
-    bottom: 70px; /* Above bottom nav, at the bottom of content area */
-    padding: 0.75rem 1.5rem;
-    position: fixed;
+    padding: calc(60px + 1rem) 1.5rem calc(140px + 2rem) !important; /* Space for mobile header + bottom nav + progress bar */
+    padding-top: calc(60px + 1rem) !important; /* Space for mobile header */
+    padding-bottom: calc(140px + 2rem) !important; /* Space for progress + bottom nav */
+    min-height: calc(100vh - 60px - 140px) !important; /* Full height minus header and footer */
   }
 
   .nav-tabs {
@@ -724,6 +731,12 @@ nav {
   .task-meta-row {
     flex-wrap: wrap;
     gap: 1rem;
+  }
+
+  .progress-section {
+    bottom: 70px !important; /* Fixed above bottom nav - no gap */
+    padding: 0.75rem 1.5rem;
+    position: fixed !important;
   }
 
   .progress-container {
