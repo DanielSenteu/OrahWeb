@@ -9,6 +9,12 @@
   background: rgba(11, 13, 18, 0.8);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   pointer-events: none;
+  height: auto;
+  min-height: auto;
+}
+
+.top-nav .nav-container {
+  pointer-events: auto;
 }
 
 .top-nav * {
@@ -86,6 +92,12 @@
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
   display: none; /* Hidden by default, shown on mobile */
   pointer-events: none;
+  height: auto;
+  min-height: auto;
+}
+
+.bottom-nav .bottom-nav-container {
+  pointer-events: auto;
 }
 
 .bottom-nav * {
