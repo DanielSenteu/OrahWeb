@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -31,7 +31,6 @@ export default function DashboardPage() {
   const [goal, setGoal] = useState<Goal | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [selectedDate, setSelectedDate] = useState(new Date())
-  const [currentDateKey, setCurrentDateKey] = useState('')
 
   // Force scroll to top BEFORE paint to prevent stuck scroll
   useLayoutEffect(() => {
@@ -39,15 +38,6 @@ export default function DashboardPage() {
     document.documentElement.scrollTop = 0
     document.body.scrollTop = 0
   }, [])
-
-  useEffect(() => {
-    // Small delay to ensure auth session is ready after OAuth redirect
-    const timer = setTimeout(() => {
-      loadDashboard()
-    }, 100)
-    
-    return () => clearTimeout(timer)
-  }, [selectedDate])
 
   // Format date as YYYY-MM-DD WITHOUT timezone conversion
   // This ensures dates match exactly what's stored in the database
@@ -58,7 +48,7 @@ export default function DashboardPage() {
     return `${year}-${month}-${day}`
   }
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -92,7 +82,6 @@ export default function DashboardPage() {
 
       // Get tasks for selected date
       const dateKey = formatDateKey(selectedDate)
-      setCurrentDateKey(dateKey)
 
       const { data: tasksData } = await supabase
         .from('task_items')
@@ -108,7 +97,16 @@ export default function DashboardPage() {
       console.error('Dashboard load error:', error)
       setLoading(false)
     }
-  }
+  }, [selectedDate, router])
+
+  useEffect(() => {
+    // Small delay to ensure auth session is ready after OAuth redirect
+    const timer = setTimeout(() => {
+      loadDashboard()
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [loadDashboard])
 
   const navigateDate = (direction: 'prev' | 'next') => {
     const newDate = new Date(selectedDate)

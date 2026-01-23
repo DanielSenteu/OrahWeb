@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import Navigation from '@/components/layout/Navigation'
 import '@/app/styles/academic-form.css'
 import '../assistant/assistant-chat.css'
 
