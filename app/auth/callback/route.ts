@@ -6,8 +6,7 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get('code')
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
-  const next = requestUrl.searchParams.get('next') || '/dashboard'
-
+  
   // Handle OAuth errors
   if (error) {
     console.error('OAuth error:', error, errorDescription)
@@ -29,17 +28,9 @@ export async function GET(request: Request) {
         return NextResponse.redirect(new URL('/login?error=no-session', requestUrl.origin))
       }
 
-      // Success - redirect to dashboard (or onboarding for new users)
-      // Check if user is new by checking if they have any goals
-      const { data: goals } = await supabase
-        .from('user_goals')
-        .select('id')
-        .eq('user_id', data.session.user.id)
-        .limit(1)
-
-      // If no goals, might be a new user - but let dashboard handle the redirect
-      // Dashboard will redirect to goals if no active goal
-      return NextResponse.redirect(new URL(next, requestUrl.origin))
+      // Success - always redirect to dashboard
+      // Dashboard will handle redirecting to goals if no active goal
+      return NextResponse.redirect(new URL('/dashboard', requestUrl.origin))
     } catch (err: any) {
       console.error('Auth callback exception:', err)
       return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(err.message || 'auth-failed')}`, requestUrl.origin))
