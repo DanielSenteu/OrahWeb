@@ -1,12 +1,14 @@
 // Edge Function: semester_planner
 // SIMPLE approach: Extract dates from syllabus, place on calendar, add prep tasks
 // Distributes prep tasks based on user's preferred days/week
+// VERSION: 2.2.0 - Added general auto-fix for day abbreviation mismatches (works for all syllabi)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || ""
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+const FUNCTION_VERSION = "2.3.0"
 
 interface RequestBody {
   userId: string
@@ -266,7 +268,8 @@ serve(async (req) => {
     const focusDuration = metadata?.focusDuration || 45
     const daysPerWeek = metadata?.daysPerWeek || 3
 
-    console.log("🎓 Semester Planner: Extracting events from syllabus...")
+    console.log(`🎓 Semester Planner v${FUNCTION_VERSION}: Extracting events from syllabus...`)
+    console.log(`   (Auto-fix enabled for day abbreviation mismatches)`)
 
     // Get today as simple date string - NO timezone conversions
     const todayStr = getTodayString()
@@ -450,18 +453,204 @@ Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
         }
       })
       
-      // VALIDATION: Check for common day extraction errors
+      // VALIDATION & AUTO-FIX: General day abbreviation correction
+      // This checks if extracted days match what's actually in the syllabus
       const classEvents = extracted.events.filter(e => e.type === 'class' && e.dayOfWeek)
-      if (classEvents.length >= 2) {
-        const days = classEvents.map(e => e.dayOfWeek?.toLowerCase() || '')
-        const hasMonday = days.includes('monday')
-        const hasWednesday = days.includes('wednesday')
-        const hasFriday = days.includes('friday')
+      if (classEvents.length > 0) {
+        const extractedDays = classEvents.map(e => e.dayOfWeek?.toLowerCase() || '').join(', ')
+        console.log(`🔍 Validating extracted class days: ${extractedDays}`)
         
-        // If we see Monday + Wednesday but no Friday, this might be wrong (should be Wednesday + Friday)
-        if (hasMonday && hasWednesday && !hasFriday) {
-          console.warn(`⚠️  WARNING: Extracted Monday + Wednesday for classes. If syllabus says "W" and "F", this should be Wednesday + Friday!`)
-          console.warn(`    Check the syllabus - "W" = Wednesday, "F" = Friday, NOT Monday + Wednesday`)
+        // Map of common day abbreviations to full day names
+        const dayAbbrevMap: Record<string, string> = {
+          'm': 'monday', 'mon': 'monday',
+          't': 'tuesday', 'tue': 'tuesday', 'tues': 'tuesday',
+          'w': 'wednesday', 'wed': 'wednesday',
+          'r': 'thursday', 'thu': 'thursday', 'thurs': 'thursday',
+          'f': 'friday', 'fri': 'friday',
+          's': 'saturday', 'sat': 'saturday',
+          'u': 'sunday', 'sun': 'sunday'
+        }
+        
+        // Find day abbreviations in syllabus - multiple patterns to catch all cases
+        // Look for patterns like:
+        // - "Lectures: W 11:30am, F 10:30am"
+        // - "W 11:30am - 12:20pm, F 10:30am - 12:20pm"
+        // - "Classes: M, W, F"
+        let foundAbbrevs: string[] = []
+        
+        // Pattern 1: Look for "W 11:30am" or "F 10:30am" patterns (single letter + time)
+        const singleLetterPattern = /\b([mtrwfsu])\s+\d{1,2}:\d{2}[ap]m/gi
+        let matches = syllabusContent.match(singleLetterPattern)
+        if (matches) {
+          matches.forEach(m => {
+            const abbrev = m.match(/[mtrwfsu]/i)?.[0]?.toLowerCase()
+            if (abbrev && !foundAbbrevs.includes(abbrev)) {
+              foundAbbrevs.push(abbrev)
+            }
+          })
+        }
+        
+        // Pattern 2: Look for "Lectures: W 11:30am, F 10:30am" (with context)
+        if (foundAbbrevs.length < classEvents.length) {
+          const contextPattern = /(?:lectures?|classes?|class times?|schedule|meets?)[:\s]+([mtrwfsu][\s,]*)+/i
+          const contextMatch = syllabusContent.match(contextPattern)
+          if (contextMatch) {
+            const abbrevs = contextMatch[0].match(/[mtrwfsu]/gi) || []
+            abbrevs.forEach(a => {
+              const abbrev = a.toLowerCase()
+              if (!foundAbbrevs.includes(abbrev)) {
+                foundAbbrevs.push(abbrev)
+              }
+            })
+          }
+        }
+        
+        // Pattern 3: Look for full abbreviations like "Mon", "Wed", "Fri"
+        if (foundAbbrevs.length < classEvents.length) {
+          const fullAbbrevPattern = /\b(mon|tue|wed|thu|fri|sat|sun)\b/gi
+          matches = syllabusContent.match(fullAbbrevPattern)
+          if (matches) {
+            matches.forEach(m => {
+              const abbrev = m.toLowerCase()
+              if (!foundAbbrevs.includes(abbrev)) {
+                foundAbbrevs.push(abbrev)
+              }
+            })
+          }
+        }
+        
+        console.log(`🔍 Found abbreviations in syllabus: ${foundAbbrevs.join(', ').toUpperCase() || 'NONE'}`)
+        
+        if (foundAbbrevs.length > 0 && foundAbbrevs.length === classEvents.length) {
+          // Map abbreviations to full day names
+          const expectedDays = foundAbbrevs.map(a => {
+            // Handle full abbreviations like "mon", "tue"
+            if (a.length > 1) {
+              return dayAbbrevMap[a] || dayAbbrevMap[a[0]]
+            }
+            return dayAbbrevMap[a] || ''
+          }).filter(Boolean)
+          
+          console.log(`🔍 Expected days: ${expectedDays.join(', ')}`)
+          
+          if (expectedDays.length === classEvents.length) {
+            // Check if extracted days match expected days
+            const extractedDaysLower = classEvents.map(e => e.dayOfWeek?.toLowerCase() || '')
+            const allMatch = expectedDays.every(day => extractedDaysLower.includes(day))
+            
+            console.log(`🔍 Match check: ${allMatch ? 'MATCH' : 'MISMATCH'}`)
+            
+            if (!allMatch) {
+              console.warn(`⚠️  MISMATCH DETECTED: Syllabus shows ${foundAbbrevs.join(', ').toUpperCase()} but extracted ${extractedDays}`)
+              console.warn(`    Expected: ${expectedDays.join(', ')}`)
+              
+              // Auto-fix: Replace extracted days with expected days in order
+              let fixed = false
+              classEvents.forEach((event, idx) => {
+                if (idx < expectedDays.length) {
+                  const oldDay = event.dayOfWeek
+                  const expectedDay = expectedDays[idx]
+                  const newDay = expectedDay.charAt(0).toUpperCase() + expectedDay.slice(1)
+                  
+                  if (oldDay?.toLowerCase() !== expectedDay) {
+                    event.dayOfWeek = newDay
+                    console.log(`    ✓ Fixed: ${oldDay} → ${newDay}`)
+                    fixed = true
+                  }
+                }
+              })
+              
+              if (fixed) {
+                console.log(`✅ Auto-fix applied: Days now match syllabus abbreviations`)
+              }
+            } else {
+              console.log(`✅ Days match correctly`)
+            }
+          }
+        } else if (foundAbbrevs.length === 0) {
+          console.warn(`⚠️  Could not find day abbreviations in syllabus - trying fallback check`)
+          
+          // FALLBACK: General day abbreviation detection from syllabus text
+          // Look for any single-letter day abbreviations (M, T, W, R, F, S, U) near times or in lecture sections
+          const fallbackPatterns = [
+            /\b([mtrwfsu])\s+\d{1,2}:\d{2}/gi,  // W 11:30
+            /\b([mtrwfsu])\s+\d{1,2}[ap]m/gi,  // W 11:30am
+            /(?:lectures?|classes?)[:\s]+([mtrwfsu])/gi,  // Lectures: W
+            /([mtrwfsu])\s*,\s*([mtrwfsu])/gi,  // W, F or M, W, F
+          ]
+          
+          const fallbackAbbrevs: string[] = []
+          for (const pattern of fallbackPatterns) {
+            const matches = syllabusContent.match(pattern)
+            if (matches) {
+              matches.forEach(m => {
+                const abbrevs = m.match(/[mtrwfsu]/gi) || []
+                abbrevs.forEach(a => {
+                  const abbrev = a.toLowerCase()
+                  if (!fallbackAbbrevs.includes(abbrev)) {
+                    fallbackAbbrevs.push(abbrev)
+                  }
+                })
+              })
+              if (fallbackAbbrevs.length >= classEvents.length) break
+            }
+          }
+          
+          if (fallbackAbbrevs.length > 0 && fallbackAbbrevs.length === classEvents.length) {
+            console.log(`🔍 Fallback found abbreviations: ${fallbackAbbrevs.join(', ').toUpperCase()}`)
+            
+            const expectedDays = fallbackAbbrevs.map(a => dayAbbrevMap[a] || '').filter(Boolean)
+            
+            if (expectedDays.length === classEvents.length) {
+              const extractedDaysLower = classEvents.map(e => e.dayOfWeek?.toLowerCase() || '')
+              const allMatch = expectedDays.every(day => extractedDaysLower.includes(day))
+              
+              if (!allMatch) {
+                console.warn(`⚠️  FALLBACK FIX: Mismatch detected`)
+                console.warn(`    Syllabus shows: ${fallbackAbbrevs.join(', ').toUpperCase()} → ${expectedDays.join(', ')}`)
+                console.warn(`    But extracted: ${extractedDays}`)
+                
+                let fixed = false
+                classEvents.forEach((event, idx) => {
+                  if (idx < expectedDays.length) {
+                    const oldDay = event.dayOfWeek
+                    const expectedDay = expectedDays[idx]
+                    const newDay = expectedDay.charAt(0).toUpperCase() + expectedDay.slice(1)
+                    
+                    if (oldDay?.toLowerCase() !== expectedDay) {
+                      event.dayOfWeek = newDay
+                      console.log(`    ✓ Fixed: ${oldDay} → ${newDay}`)
+                      fixed = true
+                    }
+                  }
+                })
+                
+                if (fixed) {
+                  console.log(`✅ Fallback auto-fix applied`)
+                }
+              }
+            }
+          } else if (classEvents.length === 2) {
+            // Last resort: Check for common error patterns
+            const days = classEvents.map(e => e.dayOfWeek?.toLowerCase() || '')
+            const hasMonday = days.includes('monday')
+            const hasWednesday = days.includes('wednesday')
+            const hasFriday = days.includes('friday')
+            
+            // If Monday+Wednesday but syllabus mentions W and F, fix it
+            const hasW = /(?:^|\s)w\s+\d|w\s+\d{1,2}:\d{2}|w\s+\d{1,2}[ap]m|wednesday/i.test(syllabusContent)
+            const hasF = /(?:^|\s)f\s+\d|f\s+\d{1,2}:\d{2}|f\s+\d{1,2}[ap]m|friday/i.test(syllabusContent)
+            
+            if (hasMonday && hasWednesday && !hasFriday && hasW && hasF) {
+              console.warn(`⚠️  LAST RESORT FIX: Monday+Wednesday detected but syllabus has W+F`)
+              classEvents[0].dayOfWeek = 'Wednesday'
+              classEvents[1].dayOfWeek = 'Friday'
+              console.log(`    ✓ Fixed: Monday → Wednesday, Wednesday → Friday`)
+              console.log(`✅ Last resort auto-fix applied`)
+            }
+          }
+        } else {
+          console.warn(`⚠️  Found ${foundAbbrevs.length} abbreviations but ${classEvents.length} class events - count mismatch`)
         }
       }
     } catch (e) {

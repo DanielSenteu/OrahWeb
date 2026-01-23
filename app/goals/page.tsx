@@ -42,7 +42,12 @@ export default function GoalsPage() {
   }, [])
 
   useEffect(() => {
-    loadGoals()
+    // Small delay to ensure auth session is ready after OAuth redirect
+    const timer = setTimeout(() => {
+      loadGoals()
+    }, 100)
+    
+    return () => clearTimeout(timer)
   }, [])
 
   const loadGoals = async () => {

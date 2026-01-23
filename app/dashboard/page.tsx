@@ -41,7 +41,12 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    loadDashboard()
+    // Small delay to ensure auth session is ready after OAuth redirect
+    const timer = setTimeout(() => {
+      loadDashboard()
+    }, 100)
+    
+    return () => clearTimeout(timer)
   }, [selectedDate])
 
   // Format date as YYYY-MM-DD WITHOUT timezone conversion
