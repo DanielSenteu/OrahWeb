@@ -22,6 +22,22 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Mobile: Add padding for bottom navigation */
+@media (max-width: 767px) {
+  body {
+    padding-bottom: 70px;
+  }
+}
+
+/* Safe area for devices with notches (iPhone X+) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  @media (max-width: 767px) {
+    body {
+      padding-bottom: calc(70px + env(safe-area-inset-bottom));
+    }
+  }
+}
+
 /* Ensure main containers never prevent scrolling */
 #__next {
   min-height: 100vh;

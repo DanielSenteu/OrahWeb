@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import Navigation from '@/components/layout/Navigation'
 import './dashboard.css'
 
 interface Task {
@@ -164,11 +165,7 @@ export default function DashboardPage() {
     return (
       <>
         <div className="noise-bg"></div>
-        <nav>
-          <div className="nav-container">
-            <Link href="/" className="logo">ORAH</Link>
-          </div>
-        </nav>
+        <Navigation />
         <div className="loading-container">
           <div className="loading-spinner"></div>
           <p className="loading-text">Loading dashboard...</p>
@@ -181,11 +178,7 @@ export default function DashboardPage() {
     return (
       <>
         <div className="noise-bg"></div>
-        <nav>
-          <div className="nav-container">
-            <Link href="/" className="logo">ORAH</Link>
-          </div>
-        </nav>
+        <Navigation />
         <div className="container">
           <div className="empty-state">
             <div className="empty-icon">
@@ -220,18 +213,7 @@ export default function DashboardPage() {
       <div className="noise-bg"></div>
 
       {/* Navigation */}
-      <nav>
-        <div className="nav-container">
-          <Link href="/" className="logo">ORAH</Link>
-          <div className="nav-tabs">
-            <Link href="/lecture-notes" className="nav-tab">Notes</Link>
-            <Link href="/goals" className="nav-tab">Goals</Link>
-            <Link href="/schedule" className="nav-tab">Schedule</Link>
-            <Link href="/assistant" className="nav-tab">Orah</Link>
-            <Link href="/dashboard" className="nav-tab active">Dashboard</Link>
-          </div>
-        </div>
-      </nav>
+      <Navigation />
 
       {/* Main Container */}
       <div className="container">

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import Navigation from '@/components/layout/Navigation'
 import './goals.css'
 
 interface Goal {
@@ -232,14 +233,7 @@ export default function GoalsPage() {
     <>
       <div className="noise-bg"></div>
 
-      <nav>
-        <div className="nav-container">
-          <Link href="/" className="logo">ORAH</Link>
-          <div className="nav-actions">
-            <Link href="/dashboard" className="btn-back">Back</Link>
-          </div>
-        </div>
-      </nav>
+      <Navigation />
 
       <div className="container">
         <div className="page-header">

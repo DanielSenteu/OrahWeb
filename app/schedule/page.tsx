@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import Navigation from '@/components/layout/Navigation'
 import './schedule.css'
 
 interface Task {
@@ -369,11 +370,7 @@ export default function SchedulePage() {
     return (
       <>
         <div className="noise-bg"></div>
-        <nav>
-          <div className="nav-container">
-            <Link href="/" className="logo">ORAH</Link>
-          </div>
-        </nav>
+        <Navigation />
         <div className="loading-container">
           <div className="loading-spinner"></div>
           <p className="loading-text">Loading schedule...</p>
@@ -402,14 +399,7 @@ export default function SchedulePage() {
       <div className="noise-bg"></div>
 
       {/* Navigation */}
-      <nav>
-        <div className="nav-container">
-          <Link href="/" className="logo">ORAH</Link>
-          <div className="nav-actions">
-            <Link href="/dashboard" className="btn-done">Done</Link>
-          </div>
-        </div>
-      </nav>
+      <Navigation />
 
       {/* Main Container */}
       <div className="container">

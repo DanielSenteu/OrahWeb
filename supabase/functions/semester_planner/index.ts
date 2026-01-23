@@ -296,8 +296,8 @@ Extract the course information and ALL events into this JSON format. Be VERY pre
       "type": "class|tutorial|lab|assignment|quiz|midterm|final|project",
       "title": "Event name/title",
       "description": "Any details from syllabus",
-      "dayOfWeek": "Monday (for recurring events like classes)",
-      "time": "10:00 AM (start time if mentioned)",
+      "dayOfWeek": "Monday (for recurring events like classes, tutorials, labs)",
+      "time": "10:00 AM (start time if mentioned, or 'TBD' if not specified)",
       "date": "YYYY-MM-DD (for one-time events - MUST include full year)",
       "dueTime": "11:59 PM (for assignments)"
     }
@@ -308,18 +308,22 @@ CRITICAL RULES FOR DATE EXTRACTION:
 1. courseName and courseCode MUST be extracted from the syllabus. Look for course titles, codes like "CMPT 310", "CS 101", etc.
 
 2. For RECURRING events (class, tutorial, lab):
-   - Set "dayOfWeek" (e.g., "Monday", "Wednesday", "Friday")
-   - Set "time" if mentioned (e.g., "11:30 AM", "10:30 AM")
-   - Do NOT set "date"
+   - MANDATORY: Set "dayOfWeek" (e.g., "Monday", "Wednesday", "Friday") - this is REQUIRED
+   - Set "time" if mentioned (e.g., "11:30 AM", "10:30 AM"), or "TBD" if time is not specified
+   - Do NOT set "date" for recurring events
+   - FOR CLASSES: Look ONLY in the "Lectures:" or "Class Times:" section. Ignore mentions of days in other contexts (like "No class on Monday" or "Monday is a holiday"). Extract ONLY the days listed in the official lecture schedule.
+   - LABS: Labs can be recurring (need dayOfWeek) OR one-time (need date). If syllabus says "Labs: Monday" or "Lab sessions: W 2:00 PM", extract as recurring with dayOfWeek. If it says "Lab 1: Jan 28" or "Lab on Feb 4", extract as one-time with date.
+   - If a lab has NO dayOfWeek AND NO date, DO NOT include it in events (skip it)
 
 3. For ONE-TIME events (assignment, quiz, midterm, final, project):
-   - Set "date" as YYYY-MM-DD with FULL YEAR (e.g., "2025-01-28", "2025-02-04")
+   - MANDATORY: Set "date" as YYYY-MM-DD with FULL YEAR (e.g., "2025-01-28", "2025-02-04")
    - For dates like "W Jan. 28" or "Jan. 28": Convert to "YYYY-01-28" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
    - For dates like "Feb. 4" or "W Feb. 4": Convert to "YYYY-02-04" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
    - For dates like "Mar. 11" or "W Mar. 11": Convert to "YYYY-03-11" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
    - For dates like "Apr. 8" or "W Apr. 8": Convert to "YYYY-04-08" (use ${currentYear} if month >= ${currentMonth}, otherwise ${currentYear + 1})
    - Set "dueTime" if mentioned (e.g., "5:30 PM")
-   - Do NOT set "dayOfWeek"
+   - Do NOT set "dayOfWeek" for one-time events
+   - If date is "TBA" or "TBD", DO NOT include the event (skip finals/exams with TBA dates)
 
 4. DATE CONVERSION EXAMPLES:
    - "W Jan. 28" → "2025-01-28" (if current month is Jan or earlier) or "2026-01-28" (if current month is after Jan)
@@ -327,12 +331,37 @@ CRITICAL RULES FOR DATE EXTRACTION:
    - "W Mar. 4" → "2025-03-04" (if current month is Mar or earlier) or "2026-03-04" (if current month is after Mar)
    - "W Apr. 8" → "2025-04-08" (if current month is Apr or earlier) or "2026-04-08" (if current month is after Apr)
 
-5. Extract EXACT dates from syllabus - don't guess or make up dates
-6. For "Lectures: W 11:30am - 12:20pm, F 10:30am - 12:20pm" → Create TWO separate class events:
-   - One with dayOfWeek: "Wednesday", time: "11:30 AM"
-   - One with dayOfWeek: "Friday", time: "10:30 AM"
+5. DAY OF WEEK ABBREVIATIONS (CRITICAL - use these mappings):
+   - M/Mon = Monday
+   - T/Tue/Tues = Tuesday
+   - W/Wed = Wednesday
+   - R/Thu/Thurs = Thursday
+   - F/Fri = Friday
+   - S/Sat = Saturday
+   - U/Sun = Sunday
+   
+   IMPORTANT: When you see "W" it ALWAYS means Wednesday, NOT Monday. When you see "F" it ALWAYS means Friday.
+   Example: "Lectures: W 11:30am, F 10:30am" means Wednesday AND Friday, NOT Monday and Wednesday.
 
-7. MONTH ABBREVIATIONS:
+6. PRIORITIZE LECTURE SCHEDULE SECTION:
+   - Look for sections titled "Lectures:", "Class Times:", "Schedule:", or similar
+   - Extract class days ONLY from the official lecture schedule, not from other mentions
+   - If syllabus says "Lectures: W 11:30am - 12:20pm, F 10:30am - 12:20pm", extract:
+     * One class event: dayOfWeek: "Wednesday", time: "11:30 AM"
+     * One class event: dayOfWeek: "Friday", time: "10:30 AM"
+   - Do NOT extract Monday if the lecture schedule says "W" (Wednesday) and "F" (Friday)
+
+7. For "Labs: Monday 2:00 PM" or "Lab sessions: W 2:00 PM" → Create lab event with:
+   - type: "lab"
+   - dayOfWeek: "Monday" or "Wednesday" (using abbreviation mapping above)
+   - time: "2:00 PM"
+
+8. For "Lab 1: Jan 28" or "Lab on Feb 4" → Create lab event with:
+   - type: "lab"
+   - date: "YYYY-01-28" or "YYYY-02-04"
+   - Do NOT set dayOfWeek
+
+9. MONTH ABBREVIATIONS:
    - Jan/Jan. = January (01)
    - Feb/Feb. = February (02)
    - Mar/Mar. = March (03)
@@ -345,6 +374,19 @@ CRITICAL RULES FOR DATE EXTRACTION:
    - Oct/Oct. = October (10)
    - Nov/Nov. = November (11)
    - Dec/Dec. = December (12)
+
+10. VALIDATION: Every event MUST have either:
+    - (dayOfWeek) for recurring events, OR
+    - (date) for one-time events
+    If an event has neither, DO NOT include it.
+
+11. DOUBLE-CHECK CLASS DAYS:
+    - After extracting class events, verify you used the correct days from the lecture schedule
+    - If the syllabus says "W" and "F", you MUST extract "Wednesday" and "Friday", NOT "Monday" and "Wednesday"
+    - If you see "Lectures: W 11:30am, F 10:30am", the correct extraction is:
+      * dayOfWeek: "Wednesday" (NOT Monday)
+      * dayOfWeek: "Friday" (NOT Wednesday)
+    - Common mistake: "W" does NOT mean Monday. "W" = Wednesday, "F" = Friday, "M" = Monday
 
 Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
 
@@ -491,7 +533,7 @@ Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
     // Step 3: Add FIXED events (classes, tutorials, labs, deadlines)
     for (const event of extracted.events) {
       if (event.type === 'class' || event.type === 'tutorial' || event.type === 'lab') {
-        // Recurring event
+        // Recurring event - MUST have dayOfWeek
         if (event.dayOfWeek) {
           const dayNum = dayOfWeekToNumber(event.dayOfWeek)
           if (dayNum >= 0) {
@@ -503,16 +545,50 @@ Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
               const courseLabel = extracted.courseCode || extracted.courseName
               const eventLabel = event.type.charAt(0).toUpperCase() + event.type.slice(1)
               
+              // Handle TBD times - show clearer description
+              let timeDesc = ''
+              if (event.time && event.time.toUpperCase() !== 'TBD') {
+                timeDesc = `${event.time} - `
+              } else if (event.time && event.time.toUpperCase() === 'TBD') {
+                timeDesc = 'Time TBD - '
+              }
+              
               allTasks.push({
                 title: `${eventLabel}: ${courseLabel}`,
-                description: event.time ? `${event.time} - ${event.description || event.type + ' session'}` : (event.description || `${event.type} session`),
+                description: timeDesc + (event.description || `${event.type} session`),
                 scheduledDate: dateKey,
                 estimatedMinutes: event.type === 'class' ? 80 : 50,
                 eventType: event.type,
                 isPrep: false
               })
             }
+          } else {
+            console.warn(`  ✗ Invalid dayOfWeek "${event.dayOfWeek}" for ${event.type}: ${event.title}`)
           }
+        } else if (event.date) {
+          // Lab might be one-time event with a date instead of recurring
+          if (typeof event.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(event.date)) {
+            try {
+              const fixedDate = fixEventDate(event.date)
+              console.log(`  ✓ Added ${event.type}: ${event.title} on ${fixedDate}`)
+              
+              allTasks.push({
+                title: event.title,
+                description: event.description || `${event.type} session`,
+                scheduledDate: fixedDate,
+                estimatedMinutes: 50,
+                eventType: event.type,
+                isPrep: false
+              })
+            } catch (error) {
+              console.error(`  ✗ Error processing ${event.type} date ${event.date} for ${event.title}:`, error)
+            }
+          } else {
+            console.warn(`  ✗ ${event.type} "${event.title}" has invalid date format: "${event.date}". Expected YYYY-MM-DD.`)
+          }
+        } else {
+          // Recurring event with no dayOfWeek and no date - skip it
+          console.warn(`  ✗ ${event.type} "${event.title}" has no dayOfWeek (for recurring) or date (for one-time) - skipping`)
         }
       } else if (event.date) {
         // One-time event (assignment due, quiz, midterm, final)
