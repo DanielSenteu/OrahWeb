@@ -479,7 +479,7 @@ nav {
   backdrop-filter: blur(20px) saturate(180%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   padding: 1.25rem 2rem;
-  z-index: 1000;
+  z-index: 999; /* Below bottom nav */
 }
 
 .progress-container {
@@ -637,8 +637,13 @@ nav {
 /* Responsive */
 @media (max-width: 768px) {
   .container {
-    padding: 1rem 1.5rem 6rem; /* Reduced top padding, added bottom for nav */
+    padding: 1rem 1.5rem calc(70px + 1rem); /* Space for bottom nav + progress */
     padding-top: 1rem; /* No top nav on mobile */
+  }
+
+  .progress-section {
+    bottom: 70px; /* Above bottom nav */
+    padding: 1rem 1.5rem;
   }
 
   .nav-tabs {

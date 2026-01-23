@@ -8,6 +8,11 @@
   backdrop-filter: blur(20px) saturate(180%);
   background: rgba(11, 13, 18, 0.8);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.top-nav * {
+  pointer-events: auto;
 }
 
 .nav-container {
@@ -80,6 +85,11 @@
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
   display: none; /* Hidden by default, shown on mobile */
+  pointer-events: none;
+}
+
+.bottom-nav * {
+  pointer-events: auto;
 }
 
 .bottom-nav-container {
