@@ -472,22 +472,35 @@ nav {
 /* Progress Bar */
 .progress-section {
   position: fixed;
-  bottom: 70px; /* Above bottom nav */
+  bottom: 0; /* At the very bottom on desktop */
   left: 0;
   right: 0;
   background: rgba(11, 13, 18, 0.95);
   backdrop-filter: blur(20px) saturate(180%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   padding: 1.25rem 2rem;
-  z-index: 998; /* Below bottom nav */
+  z-index: 998;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
   will-change: transform;
   transform: translateZ(0);
 }
 
+/* Desktop: Progress bar at bottom */
+@media (min-width: 769px) {
+  .progress-section {
+    bottom: 0 !important; /* Always at bottom on desktop */
+    position: fixed !important;
+  }
+  
+  .container {
+    padding-bottom: calc(80px + 2rem); /* Space for progress bar on desktop */
+  }
+}
+
+/* Mobile: Progress bar above bottom nav */
 @media (max-width: 768px) {
   .progress-section {
-    bottom: 70px !important; /* Above bottom nav on mobile - force it */
+    bottom: 70px !important; /* Above bottom nav on mobile */
     position: fixed !important;
     transform: translateZ(0) !important;
   }
