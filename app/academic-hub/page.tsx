@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Navigation from '@/components/layout/Navigation'
 import './academic-hub.css'
 
 export default function AcademicHubPage() {
@@ -18,6 +19,9 @@ export default function AcademicHubPage() {
     <>
       {/* Background */}
       <div className="noise-bg"></div>
+
+      {/* Navigation */}
+      <Navigation />
 
       {/* Main Container */}
       <div className="container">

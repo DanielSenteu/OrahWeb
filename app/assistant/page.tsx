@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Navigation from '@/components/layout/Navigation'
 import './assistant-chat.css'
 
 type Message = {
@@ -175,6 +176,9 @@ export default function AssistantPage() {
     <>
       {/* Background */}
       <div className="noise-bg"></div>
+
+      {/* Navigation */}
+      <Navigation />
 
       {/* Chat Container */}
       <div className="chat-container">

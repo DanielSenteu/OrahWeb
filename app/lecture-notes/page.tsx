@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import Navigation from '@/components/layout/Navigation'
 import './lecture-notes.css'
 
 type Mode = 'choose' | 'type' | 'record' | 'result'
@@ -315,6 +316,7 @@ export default function LectureNotesPage() {
     return (
       <>
         <div className="noise-bg"></div>
+        <Navigation />
         <div className="container">
           <div className="page-header">
             <div className="header-top">
@@ -443,6 +445,7 @@ export default function LectureNotesPage() {
       return (
         <>
           <div className="noise-bg"></div>
+          <Navigation />
           <div className="container">
             <div className="page-header">
               <div className="header-top">
@@ -488,6 +491,7 @@ export default function LectureNotesPage() {
       return (
         <>
           <div className="noise-bg"></div>
+          <Navigation />
           <div className="container">
             <div className="page-header">
               <div className="header-top">
@@ -517,11 +521,12 @@ export default function LectureNotesPage() {
     }
 
     // Processing recording
-    return (
-      <>
-        <div className="noise-bg"></div>
-        <div className="container">
-          <div className="recording-interface">
+      return (
+        <>
+          <div className="noise-bg"></div>
+          <Navigation />
+          <div className="container">
+            <div className="recording-interface">
             <div className="recording-card">
               <div className="recording-visualizer">
                 <div
@@ -548,6 +553,7 @@ export default function LectureNotesPage() {
     return (
       <>
         <div className="noise-bg"></div>
+        <Navigation />
         <div className="container">
           <div className="page-header">
             <div className="header-top">
@@ -612,6 +618,7 @@ For example:
     return (
       <>
         <div className="noise-bg"></div>
+        <Navigation />
         <div className="container">
           <div className="page-header">
             <div className="header-top">

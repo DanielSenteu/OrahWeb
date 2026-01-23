@@ -535,6 +535,7 @@ export default function AssignmentHelperPage() {
     return (
       <>
         <div className="noise-bg"></div>
+        <Navigation />
         <div className="chat-container">
           <div className="chat-header">
             <div className="header-content">
@@ -766,6 +767,7 @@ export default function AssignmentHelperPage() {
   return (
     <>
       <div className="noise-bg"></div>
+      <Navigation />
       <div className="container">
         {/* Header */}
         <div className="page-header">
