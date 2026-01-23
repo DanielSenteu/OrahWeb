@@ -49,10 +49,21 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient()
+      // Always use production domain for OAuth to show orahai.app instead of Supabase URL
+      // In production, use the custom domain. In development, use localhost
+      const isProduction = window.location.hostname === 'orahai.app' || window.location.hostname === 'www.orahai.app'
+      const redirectUrl = isProduction 
+        ? 'https://orahai.app/auth/callback'
+        : `${window.location.origin}/auth/callback`
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
       })
 
