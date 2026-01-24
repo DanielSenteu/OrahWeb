@@ -186,6 +186,15 @@ export default function ExamPrepPage() {
       const creationTimestamp = Date.now().toString()
       sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
 
+      // Track goal creation
+      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
+      trackGoalCreated('exam', {
+        course,
+        chapters: chapters,
+        hours_per_day: hours,
+        has_materials: !!materials,
+      })
+
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
       fetch('/api/exam-plan', {

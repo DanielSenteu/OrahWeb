@@ -66,6 +66,13 @@ export default function LectureNotesPage() {
     }
 
     loadNotes()
+
+    // Track page view
+    const trackPageView = async () => {
+      const { trackPageView: track } = await import('@/lib/utils/posthog-events')
+      track('lecture_notes', {})
+    }
+    trackPageView()
   }, [router, supabase])
 
   const saveNotesToDatabase = async (notes: GeneratedNotes, sourceType: 'typed' | 'recorded', originalContent: string) => {
@@ -98,6 +105,15 @@ export default function LectureNotesPage() {
         setActiveNoteId(data.id)
         setQaMessages([])
         setShowQa(false)
+        
+        // Track lecture note creation
+        const { trackLectureNoteCreated } = await import('@/lib/utils/posthog-events')
+        trackLectureNoteCreated({
+          source_type: sourceType,
+          has_sections: notes.sections.length > 0,
+          key_takeaways_count: notes.keyTakeaways.length,
+          definitions_count: notes.definitions.length,
+        })
       }
       
       // Refresh saved notes list

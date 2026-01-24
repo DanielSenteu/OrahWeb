@@ -34,6 +34,15 @@ export default function LoginPage() {
       }
 
       if (data.user) {
+        // Track login event
+        if (typeof window !== 'undefined') {
+          const posthog = (await import('@/lib/posthog')).posthog
+          if (posthog.__loaded) {
+            posthog.capture('user_logged_in', {
+              method: 'email',
+            })
+          }
+        }
         // Redirect to dashboard for existing users
         router.push('/dashboard')
       }

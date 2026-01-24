@@ -490,6 +490,14 @@ export default function AssignmentHelperPage() {
       const creationTimestamp = Date.now().toString()
       sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
 
+      // Track goal creation
+      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
+      trackGoalCreated('assignment', {
+        has_file: !!extractedContent,
+        hours_per_day: planHoursPerDay,
+        due_date: planDueDate,
+      })
+
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
       // Use the NEW simplified assignment helper API with passed parameters

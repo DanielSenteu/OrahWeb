@@ -3,11 +3,21 @@
 import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { posthog } from '@/lib/posthog'
 import './landing.css'
 
 export default function LandingPage() {
   const router = useRouter()
   const floatingCardRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // Send a test event when landing page loads
+    if (typeof window !== 'undefined' && posthog.__loaded) {
+      posthog.capture('landing_page_viewed', {
+        timestamp: new Date().toISOString(),
+      })
+    }
+  }, [])
 
   useEffect(() => {
     // 3D tilt effect for floating card

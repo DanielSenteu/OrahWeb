@@ -47,6 +47,13 @@ export default function GoalsPage() {
       loadGoals()
     }, 100)
     
+    // Track page view
+    const trackPageView = async () => {
+      const { trackPageView: track } = await import('@/lib/utils/posthog-events')
+      track('goals', {})
+    }
+    trackPageView()
+    
     return () => clearTimeout(timer)
   }, [])
 

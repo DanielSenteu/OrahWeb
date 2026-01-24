@@ -356,6 +356,15 @@ export default function SemesterTrackingPage() {
       const creationTimestamp = Date.now().toString()
       sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
 
+      // Track goal creation
+      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
+      trackGoalCreated('semester', {
+        has_file: !!extractedContent,
+        preferred_time: preferredTime,
+        focus_duration: focusDuration,
+        days_per_week: focusDaysPerWeek,
+      })
+
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
       // Use the NEW simplified semester planner API

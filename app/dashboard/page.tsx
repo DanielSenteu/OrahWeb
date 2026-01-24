@@ -105,6 +105,13 @@ export default function DashboardPage() {
       loadDashboard()
     }, 100)
     
+    // Track page view
+    const trackPageView = async () => {
+      const { trackPageView: track } = await import('@/lib/utils/posthog-events')
+      track('dashboard', {})
+    }
+    trackPageView()
+    
     return () => clearTimeout(timer)
   }, [loadDashboard])
 

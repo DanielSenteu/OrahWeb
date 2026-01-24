@@ -504,6 +504,14 @@ export default function TaskWorkSessionPage() {
         .update({ is_completed: true, status: 'completed' })
         .eq('id', taskId)
 
+      // Track task completion
+      const { trackTaskCompleted } = await import('@/lib/utils/posthog-events')
+      trackTaskCompleted(taskId, {
+        checkpoints_completed: completedCount,
+        total_checkpoints: totalCheckpoints,
+        time_worked: timerStateRef.current.totalTimeWorked,
+      })
+
       // Clear persisted state
       localStorage.removeItem(`timer_${taskId}`)
       localStorage.removeItem(`chat_${taskId}`)

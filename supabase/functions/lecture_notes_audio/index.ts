@@ -153,46 +153,112 @@ serve(async (req) => {
 
     if (noteId) {
       // Update existing note
+      const updateData: any = {
+        original_content: transcript,
+      }
+
+      // Only add processing_status if column exists
+      try {
+        updateData.processing_status = saveOnlyTranscript ? "pending" : "processing"
+        updateData.error_message = null
+      } catch (e) {
+        // Column doesn't exist yet
+      }
+
       const { error: updateError } = await dbSupabase
         .from("lecture_notes")
-        .update({
-          original_content: transcript,
-          processing_status: saveOnlyTranscript ? "pending" : "processing",
-          error_message: null,
-        })
+        .update(updateData)
         .eq("id", noteId)
         .eq("user_id", userId)
 
       if (updateError) {
-        console.error("❌ Error updating transcript:", updateError)
-        throw new Error("Failed to update transcript")
+        // If error is about missing column, try without processing_status
+        if (updateError.code === "PGRST204" && updateError.message?.includes("processing_status")) {
+          console.log("⚠️ processing_status column not found, updating without it (run migration)")
+          const { error: fallbackError } = await dbSupabase
+            .from("lecture_notes")
+            .update({
+              original_content: transcript,
+            })
+            .eq("id", noteId)
+            .eq("user_id", userId)
+
+          if (fallbackError) {
+            console.error("❌ Error updating transcript:", fallbackError)
+            throw new Error("Failed to update transcript. Please run the database migration: LECTURE_NOTES_SCHEMA_UPDATE.sql")
+          }
+          console.log("✅ Transcript updated in existing note (without processing_status - migration needed)")
+        } else {
+          console.error("❌ Error updating transcript:", updateError)
+          throw new Error(`Failed to update transcript: ${updateError.message}`)
+        }
+      } else {
+        console.log("✅ Transcript updated in existing note")
       }
-      console.log("✅ Transcript updated in existing note")
     } else {
       // Create new note with transcript
+      // Try with processing_status first, fallback to without if column doesn't exist
+      const insertData: any = {
+        user_id: userId,
+        title: "Lecture Recording (Processing...)",
+        summary: "Transcript saved. Generating notes...",
+        sections: [],
+        key_takeaways: [],
+        definitions: [],
+        source_type: "recorded",
+        original_content: transcript,
+      }
+
+      // Only add processing_status if column exists (will be added via migration)
+      // If migration hasn't been run, this will fail and we'll retry without it
+      try {
+        insertData.processing_status = saveOnlyTranscript ? "pending" : "processing"
+      } catch (e) {
+        // Column doesn't exist yet - will be added by migration
+      }
+
       const { data: newNote, error: insertError } = await dbSupabase
         .from("lecture_notes")
-        .insert({
-          user_id: userId,
-          title: "Lecture Recording (Processing...)",
-          summary: "Transcript saved. Generating notes...",
-          sections: [],
-          key_takeaways: [],
-          definitions: [],
-          source_type: "recorded",
-          original_content: transcript,
-          processing_status: saveOnlyTranscript ? "pending" : "processing",
-        })
+        .insert(insertData)
         .select()
         .single()
 
-      if (insertError || !newNote) {
-        console.error("❌ Error saving transcript:", insertError)
-        throw new Error("Failed to save transcript")
-      }
+      if (insertError) {
+        // If error is about missing column, try without processing_status
+        if (insertError.code === "PGRST204" && insertError.message?.includes("processing_status")) {
+          console.log("⚠️ processing_status column not found, inserting without it (run migration)")
+          const { data: fallbackNote, error: fallbackError } = await dbSupabase
+            .from("lecture_notes")
+            .insert({
+              user_id: userId,
+              title: "Lecture Recording (Processing...)",
+              summary: "Transcript saved. Generating notes...",
+              sections: [],
+              key_takeaways: [],
+              definitions: [],
+              source_type: "recorded",
+              original_content: transcript,
+            })
+            .select()
+            .single()
 
-      savedNoteId = newNote.id
-      console.log(`✅ Transcript saved to database with ID: ${savedNoteId}`)
+          if (fallbackError || !fallbackNote) {
+            console.error("❌ Error saving transcript:", fallbackError)
+            throw new Error("Failed to save transcript. Please run the database migration: LECTURE_NOTES_SCHEMA_UPDATE.sql")
+          }
+
+          savedNoteId = fallbackNote.id
+          console.log(`✅ Transcript saved to database with ID: ${savedNoteId} (without processing_status - migration needed)`)
+        } else {
+          console.error("❌ Error saving transcript:", insertError)
+          throw new Error(`Failed to save transcript: ${insertError.message}`)
+        }
+      } else if (!newNote) {
+        throw new Error("Failed to save transcript: No note returned")
+      } else {
+        savedNoteId = newNote.id
+        console.log(`✅ Transcript saved to database with ID: ${savedNoteId}`)
+      }
     }
 
     // If only saving transcript, return early
@@ -291,22 +357,52 @@ Make these notes so comprehensive that students can ace exams AND complete homew
     console.log("✅ Notes generated successfully")
 
     // Update the saved note with generated notes
+    const updateData: any = {
+      title: notes.title,
+      summary: notes.summary,
+      sections: notes.sections,
+      key_takeaways: notes.keyTakeaways,
+      definitions: notes.definitions,
+    }
+
+    // Only add processing_status if column exists
+    try {
+      updateData.processing_status = "completed"
+      updateData.error_message = null
+    } catch (e) {
+      // Column doesn't exist yet
+    }
+
     const { error: updateError } = await dbSupabase
       .from("lecture_notes")
-      .update({
-        title: notes.title,
-        summary: notes.summary,
-        sections: notes.sections,
-        key_takeaways: notes.keyTakeaways,
-        definitions: notes.definitions,
-        processing_status: "completed",
-        error_message: null,
-      })
+      .update(updateData)
       .eq("id", savedNoteId)
       .eq("user_id", userId)
 
     if (updateError) {
-      console.error("⚠️ Error updating notes:", updateError)
+      // If error is about missing column, try without processing_status
+      if (updateError.code === "PGRST204" && updateError.message?.includes("processing_status")) {
+        console.log("⚠️ processing_status column not found, updating without it (run migration)")
+        const { error: fallbackError } = await dbSupabase
+          .from("lecture_notes")
+          .update({
+            title: notes.title,
+            summary: notes.summary,
+            sections: notes.sections,
+            key_takeaways: notes.keyTakeaways,
+            definitions: notes.definitions,
+          })
+          .eq("id", savedNoteId)
+          .eq("user_id", userId)
+
+        if (fallbackError) {
+          console.error("⚠️ Error updating notes:", fallbackError)
+        } else {
+          console.log("✅ Notes saved to database (without processing_status - migration needed)")
+        }
+      } else {
+        console.error("⚠️ Error updating notes:", updateError)
+      }
       // Still return notes to user even if DB update fails
     } else {
       console.log("✅ Notes saved to database")
@@ -335,14 +431,23 @@ Make these notes so comprehensive that students can ace exams AND complete homew
       const noteId = body.noteId
       if (noteId && body.userId) {
         const dbSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        await dbSupabase
+        const updateData: any = {
+          processing_status: "failed",
+          error_message: error.message || "Failed to process audio",
+        }
+
+        const { error: updateError } = await dbSupabase
           .from("lecture_notes")
-          .update({
-            processing_status: "failed",
-            error_message: error.message || "Failed to process audio",
-          })
+          .update(updateData)
           .eq("id", noteId)
           .eq("user_id", body.userId)
+
+        // If column doesn't exist, skip the update (not critical)
+        if (updateError && updateError.code === "PGRST204") {
+          console.log("⚠️ processing_status column not found, skipping status update (run migration)")
+        } else if (updateError) {
+          console.error("Error updating failed status:", updateError)
+        }
       }
     } catch (dbError) {
       console.error("Error updating failed status:", dbError)

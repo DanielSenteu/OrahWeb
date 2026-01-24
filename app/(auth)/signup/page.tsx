@@ -41,6 +41,19 @@ export default function SignupPage() {
       }
 
       if (data.user) {
+        // Track signup event
+        if (typeof window !== 'undefined') {
+          const posthog = (await import('@/lib/posthog')).posthog
+          if (posthog.__loaded) {
+            posthog.identify(data.user.id, {
+              email: data.user.email,
+              created_at: data.user.created_at,
+            })
+            posthog.capture('user_signed_up', {
+              method: 'email',
+            })
+          }
+        }
         // Redirect to onboarding flow
         router.push('/onboarding/what-if-you-wait')
       }

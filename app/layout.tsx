@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Syne } from "next/font/google";
 import "./globals.css";
 import StructuredData from "@/components/seo/StructuredData";
+import { PostHogProvider } from "@/lib/posthog";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -142,8 +143,10 @@ export default function RootLayout({
         className={`${inter.variable} ${syne.variable} antialiased`}
         style={{ fontFamily: 'var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif' }}
       >
-        <StructuredData />
-        {children}
+        <PostHogProvider>
+          <StructuredData />
+          {children}
+        </PostHogProvider>
       </body>
     </html>
   );

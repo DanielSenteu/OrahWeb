@@ -133,6 +133,9 @@ export default function AssistantPage() {
     const creationTimestamp = new Date().toISOString()
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
+      // Track goal creation
+      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
+      trackGoalCreated('custom', { message_count: messages.length })
     }
 
     // Start the edge function call in the background (don't wait)

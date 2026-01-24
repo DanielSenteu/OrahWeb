@@ -87,6 +87,15 @@ export default function TaskDetailPage() {
             : cp
         )
       )
+
+      // Track checkpoint completion
+      if (!currentStatus) {
+        const { trackUserEngagement } = await import('@/lib/utils/posthog-events')
+        trackUserEngagement('checkpoint_completed', {
+          task_id: taskId,
+          checkpoint_id: checkpointId,
+        })
+      }
     } catch (error) {
       console.error('Checkpoint toggle error:', error)
     }
