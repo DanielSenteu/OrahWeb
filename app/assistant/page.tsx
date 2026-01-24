@@ -133,9 +133,6 @@ export default function AssistantPage() {
     const creationTimestamp = new Date().toISOString()
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
-      // Track goal creation
-      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
-      trackGoalCreated('custom', { message_count: messages.length })
     }
 
     // Start the edge function call in the background (don't wait)
@@ -153,6 +150,14 @@ export default function AssistantPage() {
     }).catch(e => {
       console.error('Background plan creation error:', e)
     })
+
+    // Track goal creation (before navigation to ensure event is sent)
+    if (typeof window !== 'undefined') {
+      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
+      await trackGoalCreated('custom', { message_count: messages.length })
+      // Small delay to ensure PostHog event is sent before navigation
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
 
     // Immediately navigate to loading screen (don't wait for completion)
     router.push('/plan-loading')

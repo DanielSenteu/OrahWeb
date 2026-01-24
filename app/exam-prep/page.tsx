@@ -186,15 +186,6 @@ export default function ExamPrepPage() {
       const creationTimestamp = Date.now().toString()
       sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
 
-      // Track goal creation
-      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
-      trackGoalCreated('exam', {
-        course,
-        chapters: chapters,
-        hours_per_day: hours,
-        has_materials: !!materials,
-      })
-
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
       fetch('/api/exam-plan', {
@@ -217,6 +208,18 @@ export default function ExamPrepPage() {
       }).catch((e) => {
         console.error('Background plan creation error:', e)
       })
+
+      // Track goal creation (before navigation to ensure event is sent)
+      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
+      await trackGoalCreated('exam', {
+        course,
+        chapters: chapters,
+        hours_per_day: hours,
+        has_materials: !!materials,
+      })
+
+      // Small delay to ensure PostHog event is sent before navigation
+      await new Promise(resolve => setTimeout(resolve, 200))
 
       router.push('/plan-loading')
     } catch (error) {

@@ -490,14 +490,6 @@ export default function AssignmentHelperPage() {
       const creationTimestamp = Date.now().toString()
       sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
 
-      // Track goal creation
-      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
-      trackGoalCreated('assignment', {
-        has_file: !!extractedContent,
-        hours_per_day: planHoursPerDay,
-        due_date: planDueDate,
-      })
-
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
       // Use the NEW simplified assignment helper API with passed parameters
@@ -517,6 +509,17 @@ export default function AssignmentHelperPage() {
       }).catch((e) => {
         console.error('Background plan creation error:', e)
       })
+
+      // Track goal creation (before navigation to ensure event is sent)
+      const { trackGoalCreated } = await import('@/lib/utils/posthog-events')
+      await trackGoalCreated('assignment', {
+        has_file: !!extractedContent,
+        hours_per_day: planHoursPerDay,
+        due_date: planDueDate,
+      })
+
+      // Small delay to ensure PostHog event is sent before navigation
+      await new Promise(resolve => setTimeout(resolve, 200))
 
       router.push('/plan-loading')
     } catch (error) {
