@@ -70,7 +70,7 @@ export const trackTaskCompleted = async (taskId: string, metadata?: Record<strin
 
 // Feature usage events
 export const trackFeatureUsed = (featureName: string, metadata?: Record<string, any>) => {
-  if (!isPostHogReady()) return
+  if (!isPostHogAvailable()) return
   
   posthog.capture('feature_used', {
     feature_name: featureName,
@@ -80,7 +80,7 @@ export const trackFeatureUsed = (featureName: string, metadata?: Record<string, 
 
 // Page view with custom properties
 export const trackPageView = (pageName: string, metadata?: Record<string, any>) => {
-  if (!isPostHogReady()) return
+  if (!isPostHogAvailable()) return
   
   posthog.capture('$pageview', {
     page_name: pageName,
