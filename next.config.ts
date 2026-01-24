@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
       dynamic: 0,
       static: 0,
     },
-    instrumentationHook: true, // Enable instrumentation for PostHog
   },
 };
 
