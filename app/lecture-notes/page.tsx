@@ -187,6 +187,15 @@ export default function LectureNotesPage() {
     setIsProcessing(true)
 
     try {
+      if (!userId) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          router.push('/login')
+          return
+        }
+        setUserId(user.id)
+      }
+
       // Convert audio to base64
       const reader = new FileReader()
       const base64Promise = new Promise<string>((resolve, reject) => {
@@ -198,25 +207,62 @@ export default function LectureNotesPage() {
       const base64 = await base64Promise
       const base64Data = base64.split(',')[1]
 
-      // Send to backend for transcription and note generation
-      const res = await fetch('/api/lecture-notes/audio', {
+      // Send to Supabase Edge Function for transcription and note generation
+      // Edge function has no timeout limits - perfect for long recordings
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('Not authenticated')
+      }
+
+      const res = await fetch('/api/lecture-notes/audio-edge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64Data }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ 
+          audio: base64Data,
+          userId: userId,
+        }),
       })
 
-      if (!res.ok) throw new Error('Failed to process recording')
-
       const data = await res.json()
-      setGeneratedNotes(data.notes)
-      
-      // Save to database
-      await saveNotesToDatabase(data.notes, 'recorded', data.transcript || '')
-      
-      setMode('result')
-    } catch (error) {
+
+      if (!res.ok) {
+        // If we have a transcript and can retry, show it
+        if (data.transcript && data.canRetry) {
+          // Transcript was saved, but note generation failed
+          alert(`Transcript saved successfully, but note generation failed. You can retry from your saved notes. Error: ${data.details || 'Unknown error'}`)
+          // Refresh notes list to show the failed one
+          const { data: updatedNotes } = await supabase
+            .from('lecture_notes')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+          if (updatedNotes) {
+            setSavedNotes(updatedNotes)
+          }
+          setMode('choose')
+          return
+        }
+        throw new Error(data.details || 'Failed to process recording')
+      }
+
+      // Success - notes generated
+      if (data.notes) {
+        setGeneratedNotes(data.notes)
+        if (data.noteId) {
+          setActiveNoteId(data.noteId)
+        }
+        setMode('result')
+      } else {
+        // Transcript saved but notes not generated yet (shouldn't happen, but handle it)
+        alert('Transcript saved. Generating notes...')
+        setMode('choose')
+      }
+    } catch (error: any) {
       console.error('Error processing recording:', error)
-      alert('Failed to process recording. Please try again.')
+      alert(`Failed to process recording: ${error.message || 'Unknown error'}. Your transcript may have been saved - check your saved notes.`)
       setMode('choose')
     } finally {
       setIsProcessing(false)
@@ -274,6 +320,59 @@ export default function LectureNotesPage() {
       loadNoteQa(activeNoteId)
     }
   }, [showQa, activeNoteId])
+
+  const retryNoteGeneration = async (noteId: string) => {
+    if (!userId) return
+
+    setIsProcessing(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('Not authenticated')
+      }
+
+      const res = await fetch('/api/lecture-notes/retry', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ noteId, userId }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.details || 'Failed to retry note generation')
+      }
+
+      // Update the note in the list
+      const { data: updatedNotes } = await supabase
+        .from('lecture_notes')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+
+      if (updatedNotes) {
+        setSavedNotes(updatedNotes)
+      }
+
+      // Load the newly generated note
+      if (data.notes) {
+        setGeneratedNotes(data.notes)
+        setActiveNoteId(noteId)
+        setMode('result')
+      } else {
+        alert('Notes generated successfully! Refresh to see them.')
+        setMode('choose')
+      }
+    } catch (error: any) {
+      console.error('Error retrying note generation:', error)
+      alert(`Failed to retry: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
 
   const sendQaQuestion = async () => {
     if (!qaInput.trim() || !activeNoteId || isAsking) return
@@ -334,8 +433,176 @@ export default function LectureNotesPage() {
             </div>
           </div>
 
+          {/* Processing/Pending Lectures Section */}
+          {savedNotes.filter((n) => n.processing_status === 'processing' || n.processing_status === 'pending').length > 0 && (
+            <div style={{ marginBottom: '3rem' }}>
+              <h2
+                style={{
+                  fontFamily: 'Syne, sans-serif',
+                  fontSize: '1.5rem',
+                  fontWeight: '700',
+                  marginBottom: '1.5rem',
+                  color: 'var(--primary-cyan)',
+                }}
+              >
+                Processing ({savedNotes.filter((n) => n.processing_status === 'processing' || n.processing_status === 'pending').length})
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {savedNotes
+                  .filter((note) => note.processing_status === 'processing' || note.processing_status === 'pending')
+                  .map((note) => (
+                    <div
+                      key={note.id}
+                      className="text-card"
+                      style={{
+                        padding: '1.5rem',
+                        borderColor: 'var(--primary-cyan)',
+                        background: 'rgba(6, 182, 212, 0.05)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <div style={{ flex: 1 }}>
+                          <h3
+                            style={{
+                              fontFamily: 'Syne, sans-serif',
+                              fontSize: '1.25rem',
+                              fontWeight: '600',
+                              marginBottom: '0.5rem',
+                            }}
+                          >
+                            {note.title || 'Processing...'}
+                          </h3>
+                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem', marginBottom: '0.5rem' }}>
+                            {note.processing_status === 'processing' 
+                              ? 'Generating notes from transcript...' 
+                              : 'Transcript saved. Ready to generate notes.'}
+                          </p>
+                          <p style={{ color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
+                            {new Date(note.created_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}{' '}
+                            • {note.source_type === 'recorded' ? '🎙️ Recorded' : '✍️ Typed'}
+                          </p>
+                        </div>
+                        {note.processing_status === 'pending' && (
+                          <button
+                            className="btn-polish"
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              await retryNoteGeneration(note.id)
+                            }}
+                            style={{
+                              background: 'var(--primary-cyan)',
+                              color: 'white',
+                              padding: '0.5rem 1rem',
+                              fontSize: '0.875rem',
+                            }}
+                          >
+                            Generate Notes
+                          </button>
+                        )}
+                        {note.processing_status === 'processing' && (
+                          <div className="spinner" style={{ width: '20px', height: '20px', border: '2px solid rgba(6, 182, 212, 0.3)', borderTopColor: 'var(--primary-cyan)' }}></div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              <div
+                style={{
+                  height: '1px',
+                  background: 'var(--border-subtle)',
+                  margin: '3rem 0',
+                }}
+              ></div>
+            </div>
+          )}
+
+          {/* Failed Lectures Section */}
+          {savedNotes.filter((n) => n.processing_status === 'failed').length > 0 && (
+            <div style={{ marginBottom: '3rem' }}>
+              <h2
+                style={{
+                  fontFamily: 'Syne, sans-serif',
+                  fontSize: '1.5rem',
+                  fontWeight: '700',
+                  marginBottom: '1.5rem',
+                  color: 'var(--primary-red)',
+                }}
+              >
+                Failed to Process ({savedNotes.filter((n) => n.processing_status === 'failed').length})
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {savedNotes
+                  .filter((note) => note.processing_status === 'failed')
+                  .map((note) => (
+                    <div
+                      key={note.id}
+                      className="text-card"
+                      style={{
+                        padding: '1.5rem',
+                        borderColor: 'var(--primary-red)',
+                        background: 'rgba(239, 68, 68, 0.05)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <div style={{ flex: 1 }}>
+                          <h3
+                            style={{
+                              fontFamily: 'Syne, sans-serif',
+                              fontSize: '1.25rem',
+                              fontWeight: '600',
+                              marginBottom: '0.5rem',
+                            }}
+                          >
+                            {note.title || 'Failed Lecture'}
+                          </h3>
+                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem', marginBottom: '0.5rem' }}>
+                            {note.error_message || 'Failed to generate notes from transcript'}
+                          </p>
+                          <p style={{ color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
+                            {new Date(note.created_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}{' '}
+                            • {note.source_type === 'recorded' ? '🎙️ Recorded' : '✍️ Typed'}
+                            {note.retry_count > 0 && ` • Retried ${note.retry_count} time${note.retry_count !== 1 ? 's' : ''}`}
+                          </p>
+                        </div>
+                        <button
+                          className="btn-polish"
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            await retryNoteGeneration(note.id)
+                          }}
+                          style={{
+                            background: 'var(--primary-red)',
+                            color: 'white',
+                            padding: '0.5rem 1rem',
+                            fontSize: '0.875rem',
+                          }}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              <div
+                style={{
+                  height: '1px',
+                  background: 'var(--border-subtle)',
+                  margin: '3rem 0',
+                }}
+              ></div>
+            </div>
+          )}
+
           {/* Saved Notes List */}
-          {savedNotes.length > 0 && (
+          {savedNotes.filter((n) => n.processing_status === 'completed' || !n.processing_status).length > 0 && (
             <div style={{ marginBottom: '3rem' }}>
               <h2
                 style={{
@@ -348,50 +615,52 @@ export default function LectureNotesPage() {
                 Your Saved Notes
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {savedNotes.map((note) => (
-                  <div
-                    key={note.id}
-                    className="text-card"
-                    style={{ cursor: 'pointer', padding: '1.5rem' }}
-                    onClick={() => loadSavedNote(note)}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                      <div style={{ flex: 1 }}>
-                        <h3
-                          style={{
-                            fontFamily: 'Syne, sans-serif',
-                            fontSize: '1.25rem',
-                            fontWeight: '600',
-                            marginBottom: '0.5rem',
-                          }}
+                {savedNotes
+                  .filter((note) => note.processing_status === 'completed' || !note.processing_status)
+                  .map((note) => (
+                    <div
+                      key={note.id}
+                      className="text-card"
+                      style={{ cursor: 'pointer', padding: '1.5rem' }}
+                      onClick={() => loadSavedNote(note)}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <div style={{ flex: 1 }}>
+                          <h3
+                            style={{
+                              fontFamily: 'Syne, sans-serif',
+                              fontSize: '1.25rem',
+                              fontWeight: '600',
+                              marginBottom: '0.5rem',
+                            }}
+                          >
+                            {note.title}
+                          </h3>
+                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem' }}>
+                            {note.summary.substring(0, 150)}
+                            {note.summary.length > 150 ? '...' : ''}
+                          </p>
+                          <p style={{ color: 'var(--text-tertiary)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                            {new Date(note.created_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}{' '}
+                            • {note.source_type === 'recorded' ? '🎙️ Recorded' : '✍️ Typed'}
+                          </p>
+                        </div>
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          style={{ width: '20px', height: '20px', color: 'var(--text-tertiary)' }}
                         >
-                          {note.title}
-                        </h3>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem' }}>
-                          {note.summary.substring(0, 150)}
-                          {note.summary.length > 150 ? '...' : ''}
-                        </p>
-                        <p style={{ color: 'var(--text-tertiary)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-                          {new Date(note.created_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}{' '}
-                          • {note.source_type === 'recorded' ? '🎙️ Recorded' : '✍️ Typed'}
-                        </p>
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
                       </div>
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        style={{ width: '20px', height: '20px', color: 'var(--text-tertiary)' }}
-                      >
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
               <div
                 style={{
