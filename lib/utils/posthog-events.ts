@@ -32,9 +32,6 @@ export const trackGoalCreated = async (goalType: 'semester' | 'assignment' | 'ex
     goal_type: goalType,
     ...metadata,
   })
-  
-  // Flush to ensure event is sent immediately
-  posthog.flush()
 }
 
 // Task completion events
@@ -49,9 +46,6 @@ export const trackTaskCompleted = async (taskId: string, metadata?: Record<strin
     task_id: taskId,
     ...metadata,
   })
-  
-  // Flush to ensure event is sent immediately
-  posthog.flush()
 }
 
 // Feature usage events
@@ -83,9 +77,6 @@ export const trackLectureNoteCreated = async (metadata?: Record<string, any>) =>
   }
   
   posthog.capture('lecture_note_created', metadata)
-  
-  // Flush to ensure event is sent immediately
-  posthog.flush()
 }
 
 // User engagement events
@@ -100,7 +91,4 @@ export const trackUserEngagement = async (action: string, metadata?: Record<stri
     action,
     ...metadata,
   })
-  
-  // Flush to ensure event is sent immediately
-  posthog.flush()
 }
