@@ -189,14 +189,17 @@ Make these notes so comprehensive that students can ace exams AND complete homew
     
     // Update database with error status if we have a noteId
     if (noteId) {
-      await supabase
-        .from('lecture_notes')
-        .update({
-          processing_status: 'failed',
-          error_message: error.message || 'Failed to process audio',
-        })
-        .eq('id', noteId)
-        .catch((err) => console.error('Error updating failed status:', err))
+      try {
+        await supabase
+          .from('lecture_notes')
+          .update({
+            processing_status: 'failed',
+            error_message: error.message || 'Failed to process audio',
+          })
+          .eq('id', noteId)
+      } catch (err: any) {
+        console.error('Error updating failed status:', err)
+      }
     }
 
     // If we have a transcript, return it so user can retry
