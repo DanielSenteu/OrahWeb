@@ -3,21 +3,21 @@
 
 import { posthog } from '@/lib/posthog'
 
-// Check if PostHog is loaded before tracking
-const isPostHogReady = () => {
+// Check if PostHog is available
+const isPostHogAvailable = () => {
   if (typeof window === 'undefined') return false
   // PostHog queues events even if not fully loaded, so we can always try
-  return typeof posthog !== 'undefined' && (posthog.__loaded || posthog.has_opted_in === undefined)
+  return typeof posthog !== 'undefined'
 }
 
-// Wait for PostHog to be ready (with timeout)
+// Wait for PostHog to be available (with timeout)
 const waitForPostHog = async (maxWait = 2000): Promise<boolean> => {
-  if (isPostHogReady()) return true
+  if (isPostHogAvailable()) return true
   
   const startTime = Date.now()
   while (Date.now() - startTime < maxWait) {
     await new Promise(resolve => setTimeout(resolve, 100))
-    if (isPostHogReady()) return true
+    if (isPostHogAvailable()) return true
   }
   return false
 }
