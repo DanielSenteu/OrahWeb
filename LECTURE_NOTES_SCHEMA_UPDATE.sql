@@ -16,6 +16,10 @@ ADD COLUMN IF NOT EXISTS error_message TEXT;
 ALTER TABLE lecture_notes 
 ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
 
+-- Add audio_url column to store Supabase Storage path for the recording
+ALTER TABLE lecture_notes 
+ADD COLUMN IF NOT EXISTS audio_url TEXT;
+
 -- Update index to include processing_status for faster queries
 CREATE INDEX IF NOT EXISTS idx_lecture_notes_status ON lecture_notes(user_id, processing_status);
 
@@ -23,6 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_lecture_notes_status ON lecture_notes(user_id, pr
 COMMENT ON COLUMN lecture_notes.processing_status IS 'Status: pending (transcript saved, notes not generated), processing (notes being generated), completed (success), failed (error occurred)';
 COMMENT ON COLUMN lecture_notes.error_message IS 'Error message if processing failed';
 COMMENT ON COLUMN lecture_notes.retry_count IS 'Number of retry attempts for failed processing';
+COMMENT ON COLUMN lecture_notes.audio_url IS 'Supabase Storage path to the audio file (e.g., "user_id/note_id.webm")';
 
 -- ============================================
 -- DONE!

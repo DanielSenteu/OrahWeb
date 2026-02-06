@@ -212,24 +212,70 @@ export default function LectureNotesPage() {
         setUserId(user.id)
       }
 
-      // Convert audio to base64
-      const reader = new FileReader()
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsDataURL(audioBlob)
-      })
+      // Step 1: Create a placeholder note in database first (to get noteId)
+      const { data: newNote, error: createError } = await supabase
+        .from('lecture_notes')
+        .insert({
+          user_id: userId,
+          title: 'Lecture Recording (Uploading...)',
+          summary: 'Uploading audio file...',
+          sections: [],
+          key_takeaways: [],
+          definitions: [],
+          source_type: 'recorded',
+          original_content: '',
+          processing_status: 'pending',
+        })
+        .select()
+        .single()
 
-      const base64 = await base64Promise
-      const base64Data = base64.split(',')[1]
+      if (createError || !newNote) {
+        throw new Error(`Failed to create note: ${createError?.message || 'Unknown error'}`)
+      }
 
-      // Send to Supabase Edge Function for transcription and note generation
-      // Edge function has no timeout limits - perfect for long recordings
+      const noteId = newNote.id
+      const fileName = `${userId}/${noteId}.webm`
+
+      // Step 2: Upload audio file directly to Supabase Storage
+      // This happens immediately - no timeout issues, handles large files
+      console.log('📤 Uploading audio to Storage...')
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('lecture-recordings')
+        .upload(fileName, audioBlob, {
+          contentType: 'audio/webm',
+          upsert: false, // Don't overwrite if exists
+        })
+
+      if (uploadError) {
+        // Clean up the note if upload fails
+        await supabase.from('lecture_notes').delete().eq('id', noteId)
+        throw new Error(`Failed to upload audio: ${uploadError.message}`)
+      }
+
+      console.log('✅ Audio uploaded to Storage:', uploadData.path)
+
+      // Step 3: Update note with audio_url
+      const { error: updateError } = await supabase
+        .from('lecture_notes')
+        .update({
+          audio_url: uploadData.path,
+          processing_status: 'processing',
+        })
+        .eq('id', noteId)
+
+      if (updateError) {
+        console.error('Warning: Failed to update audio_url:', updateError)
+        // Continue anyway - we have the path from upload
+      }
+
+      // Step 4: Send Storage path to Edge Function for processing
+      // Edge function will download from Storage and process
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         throw new Error('Not authenticated')
       }
 
+      console.log('🔄 Starting audio processing...')
       const res = await fetch('/api/lecture-notes/audio-edge', {
         method: 'POST',
         headers: { 
@@ -237,8 +283,9 @@ export default function LectureNotesPage() {
           'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ 
-          audio: base64Data,
+          audioUrl: uploadData.path, // Pass Storage path instead of base64
           userId: userId,
+          noteId: noteId,
         }),
       })
 
@@ -278,7 +325,7 @@ export default function LectureNotesPage() {
       }
     } catch (error: any) {
       console.error('Error processing recording:', error)
-      alert(`Failed to process recording: ${error.message || 'Unknown error'}. Your transcript may have been saved - check your saved notes.`)
+      alert(`Failed to process recording: ${error.message || 'Unknown error'}. Your audio file may have been saved - check your saved notes.`)
       setMode('choose')
     } finally {
       setIsProcessing(false)

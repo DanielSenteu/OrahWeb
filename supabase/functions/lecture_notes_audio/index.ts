@@ -11,7 +11,8 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 
 interface RequestBody {
   userId: string
-  audio: string // base64 encoded audio
+  audioUrl?: string // Supabase Storage path (preferred)
+  audio?: string // base64 encoded audio (fallback for backwards compatibility)
   saveOnlyTranscript?: boolean // If true, only save transcript, don't generate notes
   noteId?: string // If provided, update existing note instead of creating new
 }
@@ -65,14 +66,14 @@ serve(async (req) => {
     }
 
     const body: RequestBody = await req.json()
-    const { userId, audio, saveOnlyTranscript, noteId } = body
+    const { userId, audioUrl, audio, saveOnlyTranscript, noteId } = body
 
     // Create service role client for database operations
     const dbSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
     // If noteId is provided, fetch existing transcript for retry
     let transcript = ""
-    if (noteId && !audio) {
+    if (noteId && !audioUrl && !audio) {
       // Retry case: fetch existing transcript
       const { data: existingNote, error: fetchError } = await dbSupabase
         .from("lecture_notes")
@@ -90,9 +91,9 @@ serve(async (req) => {
 
       transcript = existingNote.original_content
       console.log(`🔄 Retry: Using existing transcript (${transcript.length} characters)`)
-    } else if (!audio) {
+    } else if (!audioUrl && !audio) {
       return new Response(
-        JSON.stringify({ error: "Missing audio data or noteId for retry" }),
+        JSON.stringify({ error: "Missing audioUrl, audio data, or noteId for retry" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
@@ -105,18 +106,41 @@ serve(async (req) => {
     }
 
     // Only transcribe if we don't have a transcript (not a retry)
-    if (!transcript && audio) {
+    if (!transcript && (audioUrl || audio)) {
       console.log("🎙️ Starting audio transcription...")
 
-      // Convert base64 to Uint8Array for Deno
-      const audioBytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0))
-      const fileSizeMB = audioBytes.length / (1024 * 1024)
-      console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB`)
+      let audioBlob: Blob
+      let fileSizeMB: number
+
+      if (audioUrl) {
+        // Download audio from Supabase Storage
+        console.log(`📥 Downloading audio from Storage: ${audioUrl}`)
+        const { data: fileData, error: downloadError } = await dbSupabase.storage
+          .from("lecture-recordings")
+          .download(audioUrl)
+
+        if (downloadError || !fileData) {
+          throw new Error(`Failed to download audio from Storage: ${downloadError?.message || "No data"}`)
+        }
+
+        audioBlob = fileData
+        fileSizeMB = audioBlob.size / (1024 * 1024)
+        console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB`)
+      } else if (audio) {
+        // Fallback: Convert base64 to Blob (for backwards compatibility)
+        console.log("📥 Using base64 audio (fallback mode)")
+        const audioBytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0))
+        fileSizeMB = audioBytes.length / (1024 * 1024)
+        console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB`)
+        audioBlob = new Blob([audioBytes], { type: "audio/webm" })
+      } else {
+        throw new Error("No audio source provided")
+      }
 
       // Create FormData for OpenAI Whisper API
       const formData = new FormData()
-      const audioBlob = new Blob([audioBytes], { type: "audio/webm" })
-      formData.append("file", audioBlob, "recording.webm")
+      const fileName = audioUrl ? audioUrl.split('/').pop() || "recording.webm" : "recording.webm"
+      formData.append("file", audioBlob, fileName)
       formData.append("model", "whisper-1")
       formData.append("language", "en")
 

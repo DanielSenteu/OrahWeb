@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { audio, userId, saveOnlyTranscript, noteId } = body
+    const { audioUrl, audio, userId, saveOnlyTranscript, noteId } = body
 
     if (!userId) {
       return NextResponse.json(
@@ -23,10 +23,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Audio is required for new recordings, but not for retries (when noteId is provided)
-    if (!audio && !noteId) {
+    // audioUrl (Storage path) is preferred for new recordings
+    // audio (base64) is fallback for backwards compatibility
+    // noteId is for retries
+    if (!audioUrl && !audio && !noteId) {
       return NextResponse.json(
-        { error: 'Missing required field: audio (or noteId for retry)' },
+        { error: 'Missing required field: audioUrl, audio, or noteId' },
         { status: 400 }
       )
     }
@@ -48,7 +50,8 @@ export async function POST(request: NextRequest) {
         apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
       },
       body: JSON.stringify({
-        audio,
+        audioUrl, // Storage path (preferred)
+        audio, // base64 fallback (for backwards compatibility)
         userId,
         saveOnlyTranscript,
         noteId,
