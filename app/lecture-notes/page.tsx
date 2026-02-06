@@ -51,6 +51,7 @@ export default function LectureNotesPage() {
   const [processingJobId, setProcessingJobId] = useState<string | null>(null)
   const [processingProgress, setProcessingProgress] = useState<number>(0)
   const [processingStatus, setProcessingStatus] = useState<string>('')
+  const [lastSaveTime, setLastSaveTime] = useState<number | null>(null)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // 3-hour recording limit (in seconds)

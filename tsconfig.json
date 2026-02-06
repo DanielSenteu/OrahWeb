@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "supabase/functions"]
+  "exclude": [
+    "node_modules",
+    "supabase/functions",
+    "EDGE_FUNCTION_MAIN_COMPLETE.ts",
+    "EDGE_FUNCTION_WORKER_COMPLETE.ts"
+  ]
 }
