@@ -488,9 +488,13 @@ export default function AssignmentHelperPage() {
       console.log('Creating assignment plan:', { planDueDate, planHoursPerDay })
 
       const creationTimestamp = Date.now().toString()
-      sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('newGoalCreationTimestamp', creationTimestamp)
+      }
 
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const timezone = typeof window !== 'undefined' 
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone
+        : 'UTC'
 
       // Use the NEW simplified assignment helper API with passed parameters
       fetch('/api/assignment-plan', {
