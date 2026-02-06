@@ -113,6 +113,8 @@ serve(async (req) => {
 
       let fileSizeMB: number = 0
       let publicAudioUrl: string = ""
+      let estimatedDurationMinutes: number = 0
+      const DURATION_THRESHOLD_MINUTES = 5 // Use AssemblyAI for recordings ≥ 5 minutes
 
       if (audioUrl) {
         // Get file info to check size
@@ -123,33 +125,109 @@ serve(async (req) => {
           
           if (fileData) {
             fileSizeMB = fileData.size / (1024 * 1024)
+            // Estimate duration: ~1MB per minute for typical webm audio
+            estimatedDurationMinutes = fileSizeMB
           }
         } catch {
           console.log("⚠️ Could not determine file size, proceeding anyway")
           fileSizeMB = 0
+          estimatedDurationMinutes = 0
         }
 
-        // Create signed URL for AssemblyAI to access (valid for 1 hour)
-        // AssemblyAI needs a publicly accessible URL to fetch the audio
-        const { data: signedUrlData, error: signedUrlError } = await dbSupabase.storage
-          .from("lecture-recordings")
-          .createSignedUrl(audioUrl, 3600) // 1 hour expiry
+        // Route based on estimated duration
+        if (estimatedDurationMinutes >= DURATION_THRESHOLD_MINUTES) {
+          // Use AssemblyAI for longer recordings (≥ 5 minutes)
+          console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB (estimated ~${estimatedDurationMinutes.toFixed(1)} minutes)`)
+          console.log(`🔄 Using AssemblyAI for transcription (≥ ${DURATION_THRESHOLD_MINUTES} minutes)...`)
 
-        if (signedUrlError || !signedUrlData) {
-          throw new Error(`Failed to create signed URL: ${signedUrlError?.message || "No data"}`)
+          if (!ASSEMBLYAI_API_KEY) {
+            throw new Error("ASSEMBLYAI_API_KEY not configured. Please add it to your environment variables.")
+          }
+
+          // Create signed URL for AssemblyAI to access (valid for 1 hour)
+          const { data: signedUrlData, error: signedUrlError } = await dbSupabase.storage
+            .from("lecture-recordings")
+            .createSignedUrl(audioUrl, 3600) // 1 hour expiry
+
+          if (signedUrlError || !signedUrlData) {
+            throw new Error(`Failed to create signed URL: ${signedUrlError?.message || "No data"}`)
+          }
+
+          publicAudioUrl = signedUrlData.signedUrl
+          console.log(`🔗 Created signed URL for AssemblyAI (valid for 1 hour)`)
+        } else {
+          // Use Whisper for shorter recordings (< 5 minutes)
+          console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB (estimated ~${estimatedDurationMinutes.toFixed(1)} minutes)`)
+          console.log(`🎤 Using Whisper for transcription (< ${DURATION_THRESHOLD_MINUTES} minutes - faster for short clips)...`)
+
+          // Download file for Whisper
+          const { data: fileData, error: downloadError } = await dbSupabase.storage
+            .from("lecture-recordings")
+            .download(audioUrl)
+
+          if (downloadError || !fileData) {
+            throw new Error(`Failed to download audio: ${downloadError?.message || "No data"}`)
+          }
+
+          // Check Whisper's 25MB limit
+          if (fileSizeMB > 25) {
+            throw new Error(
+              `Audio file is too large for Whisper (${fileSizeMB.toFixed(2)}MB). ` +
+              `Please use a shorter recording or the system will automatically use AssemblyAI for longer files.`
+            )
+          }
+
+          const audioBlob = await fileData.blob()
+          const formData = new FormData()
+          formData.append("file", audioBlob, "recording.webm")
+          formData.append("model", "whisper-1")
+          formData.append("language", "en")
+
+          const transcriptionResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
+            },
+            body: formData,
+          })
+
+          if (!transcriptionResponse.ok) {
+            const errorText = await transcriptionResponse.text()
+            throw new Error(`Whisper API failed: ${transcriptionResponse.status} ${errorText}`)
+          }
+
+          const transcriptionData = await transcriptionResponse.json()
+          transcript = transcriptionData.text || ""
+
+          if (!transcript) {
+            throw new Error("Empty transcript received from Whisper")
+          }
+
+          console.log(`✅ Transcription complete: ${transcript.length} characters`)
         }
-
-        publicAudioUrl = signedUrlData.signedUrl
-        console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB`)
-        console.log(`🔗 Created signed URL for AssemblyAI (valid for 1 hour)`)
       } else if (audio) {
-        // Fallback: For base64, we'll use Whisper (smaller files only)
-        console.log("📥 Using base64 audio (fallback mode - using Whisper)")
+        // Fallback: For base64, estimate and route accordingly
+        console.log("📥 Using base64 audio")
         const audioBytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0))
         fileSizeMB = audioBytes.length / (1024 * 1024)
-        console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB`)
+        estimatedDurationMinutes = fileSizeMB // ~1MB per minute estimate
+        console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB (estimated ~${estimatedDurationMinutes.toFixed(1)} minutes)`)
 
-        // Use Whisper for base64 (smaller files)
+        // Route based on estimated duration
+        if (estimatedDurationMinutes >= DURATION_THRESHOLD_MINUTES) {
+          // For base64, if it's long, we need to upload to Storage first for AssemblyAI
+          // Or fall back to Whisper if under 25MB
+          if (fileSizeMB > 25) {
+            throw new Error(
+              `Audio file is too large (${fileSizeMB.toFixed(2)}MB). ` +
+              `Please use Storage upload for large files.`
+            )
+          }
+          // Use Whisper even if long (since base64, we can't easily use AssemblyAI)
+          console.log(`⚠️ Base64 audio is long but using Whisper (base64 mode)`)
+        }
+
+        // Use Whisper for base64 (smaller files or fallback)
         if (fileSizeMB > 25) {
           throw new Error(
             `Audio file is too large (${fileSizeMB.toFixed(2)}MB). ` +
@@ -188,7 +266,7 @@ serve(async (req) => {
         throw new Error("No audio source provided")
       }
 
-      // Use AssemblyAI for Storage URLs (handles large files automatically)
+      // Use AssemblyAI for longer recordings (if we have a signed URL)
       if (publicAudioUrl) {
         console.log("🔄 Using AssemblyAI for transcription (handles large files automatically)...")
         
@@ -206,7 +284,7 @@ serve(async (req) => {
           body: JSON.stringify({
             audio_url: publicAudioUrl,
             language_detection: true,
-            speech_model: "universal-3-pro", // Best quality for English
+            speech_models: ["universal-3-pro"], // Best quality for English
             punctuate: true,
             format_text: true,
           }),

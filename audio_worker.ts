@@ -1,6 +1,30 @@
-// Edge Function: lecture_notes_worker
+// Lecture Notes Worker Edge Function
 // Background worker that processes lecture note jobs asynchronously
-// Handles transcription, chunking, and note generation
+// Full deployable code for Supabase Edge Functions
+
+// 🔗 Supabase Dashboard Link (Edge Functions):
+// https://supabase.com/dashboard/project/ffudidfxurrjcjredfjg/functions
+
+// 🔗 Direct Worker Function URL:
+// https://ffudidfxurrjcjredfjg.supabase.co/functions/v1/lecture_notes_worker
+
+// 📁 Function Name: lecture_notes_worker
+// 📍 Location: supabase/functions/lecture_notes_worker/index.ts
+
+// 🚀 How to Deploy:
+// 1. Go to: https://supabase.com/dashboard/project/ffudidfxurrjcjredfjg/functions
+// 2. Click on "lecture_notes_worker" (or create new function)
+// 3. Paste the code below
+// 4. Click "Deploy"
+// 5. Make sure environment variables are set:
+//    - OPENAI_API_KEY
+//    - ASSEMBLYAI_API_KEY
+//    - SUPABASE_URL
+//    - SUPABASE_SERVICE_ROLE_KEY
+
+// ============================================================================
+// FULL EDGE FUNCTION CODE (Copy everything below this line)
+// ============================================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
@@ -328,7 +352,7 @@ serve(async (req) => {
   }
 })
 
-// Helper functions (same as main Edge Function)
+// Helper functions
 async function generateNotesForChunk(chunkText: string, chunkIndex: number): Promise<GeneratedNotes> {
   const notesPrompt = `You are an ELITE note-taker creating EXAM-READY study notes. Your notes should be so thorough that a student could learn the entire lecture from your notes alone.
 
