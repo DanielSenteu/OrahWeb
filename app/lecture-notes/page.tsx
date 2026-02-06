@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Navigation from '@/components/layout/Navigation'
+import toast from 'react-hot-toast'
 import './lecture-notes.css'
 
 type Mode = 'choose' | 'type' | 'record' | 'result'
@@ -27,6 +28,11 @@ export default function LectureNotesPage() {
   const supabase = createClient()
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const recordingIdRef = useRef<string | null>(null)
+  const lastUploadTimeRef = useRef<number>(0)
+  const chunkIndexRef = useRef<number>(0)
+  const periodicSaveIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const periodicUploadIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const [mode, setMode] = useState<Mode>('choose')
   const [roughNotes, setRoughNotes] = useState('')
@@ -42,8 +48,19 @@ export default function LectureNotesPage() {
   const [qaMessages, setQaMessages] = useState<QaMessage[]>([])
   const [qaInput, setQaInput] = useState('')
   const [isAsking, setIsAsking] = useState(false)
+  const [processingJobId, setProcessingJobId] = useState<string | null>(null)
+  const [processingProgress, setProcessingProgress] = useState<number>(0)
+  const [processingStatus, setProcessingStatus] = useState<string>('')
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Load saved notes on mount
+  // 3-hour recording limit (in seconds)
+  const MAX_RECORDING_TIME = 3 * 60 * 60 // 10800 seconds = 3 hours
+  
+  // Periodic save intervals
+  const CHUNK_SAVE_INTERVAL = 30 * 1000 // Save chunks to IndexedDB every 30 seconds
+  const STORAGE_UPLOAD_INTERVAL = 5 * 60 * 1000 // Upload partial to Storage every 5 minutes
+
+  // Load saved notes and check for incomplete recordings on mount
   useEffect(() => {
     const loadNotes = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -62,6 +79,27 @@ export default function LectureNotesPage() {
 
       if (data && !error) {
         setSavedNotes(data)
+      }
+
+      // Check for incomplete recordings in IndexedDB
+      try {
+        const { getIncompleteRecordings } = await import('@/lib/utils/recording-storage')
+        const incomplete = await getIncompleteRecordings(user.id)
+        
+        if (incomplete.length > 0) {
+          const latest = incomplete.sort((a, b) => b.startTime - a.startTime)[0]
+          const shouldResume = confirm(
+            `Found an incomplete recording from ${new Date(latest.startTime).toLocaleString()}.\n\n` +
+            `Duration: ${Math.floor(latest.duration / 60)} minutes\n\n` +
+            `Would you like to resume and process it?`
+          )
+          
+          if (shouldResume) {
+            await resumeRecording(latest.id)
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for incomplete recordings:', error)
       }
     }
 
@@ -152,54 +190,256 @@ export default function LectureNotesPage() {
     let interval: NodeJS.Timeout
     if (isRecording) {
       interval = setInterval(() => {
-        setRecordingTime((prev) => prev + 1)
+        setRecordingTime((prev) => {
+          const newTime = prev + 1
+          // Auto-stop at 3-hour limit
+          if (newTime >= MAX_RECORDING_TIME) {
+            // Stop recording automatically when limit is reached
+            if (mediaRecorderRef.current) {
+              console.log('⏱️ 3-hour recording limit reached. Stopping automatically...')
+              mediaRecorderRef.current.stop()
+              setIsRecording(false)
+            }
+            return MAX_RECORDING_TIME
+          }
+          return newTime
+        })
       }, 1000)
     }
     return () => clearInterval(interval)
   }, [isRecording])
 
   const formatRecordingTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
+    const hours = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
     const secs = seconds % 60
+    
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+    }
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const formatTimeRemaining = (seconds: number) => {
+    const remaining = MAX_RECORDING_TIME - seconds
+    const hours = Math.floor(remaining / 3600)
+    const mins = Math.floor((remaining % 3600) / 60)
+    const secs = remaining % 60
+    
+    if (hours > 0) {
+      return `${hours}h ${mins}m ${secs}s`
+    }
+    if (mins > 0) {
+      return `${mins}m ${secs}s`
+    }
+    return `${secs}s`
   }
 
   const startRecording = async () => {
     try {
+      if (!userId) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          router.push('/login')
+          return
+        }
+        setUserId(user.id)
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
+      
+      // Generate unique recording ID
+      const recordingId = `rec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      recordingIdRef.current = recordingId
+      chunkIndexRef.current = 0
+      lastUploadTimeRef.current = Date.now()
 
-      mediaRecorder.ondataavailable = (event) => {
+      // Initialize IndexedDB and save metadata
+      const { initRecordingDB, saveMetadata } = await import('@/lib/utils/recording-storage')
+      await initRecordingDB()
+      await saveMetadata({
+        id: recordingId,
+        userId: userId!,
+        startTime: Date.now(),
+        duration: 0,
+        chunksCount: 0,
+        lastSaved: Date.now(),
+      })
+
+      mediaRecorder.ondataavailable = async (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data)
+          
+          // Save chunk to IndexedDB immediately
+          try {
+            const { saveChunk, saveMetadata, getMetadata } = await import('@/lib/utils/recording-storage')
+            await saveChunk(recordingId, event.data, chunkIndexRef.current)
+            chunkIndexRef.current++
+            
+            // Update metadata
+            const metadata = await getMetadata(recordingId)
+            if (metadata) {
+              metadata.chunksCount = chunkIndexRef.current
+              metadata.duration = recordingTime
+              metadata.lastSaved = Date.now()
+              await saveMetadata(metadata)
+              setLastSaveTime(Date.now())
+            }
+          } catch (error) {
+            console.error('Error saving chunk to IndexedDB:', error)
+            // Continue recording even if IndexedDB save fails
+          }
         }
       }
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
         stream.getTracks().forEach((track) => track.stop())
-        await processRecording(audioBlob)
+        
+        // Clean up intervals
+        if (periodicSaveIntervalRef.current) {
+          clearInterval(periodicSaveIntervalRef.current)
+        }
+        if (periodicUploadIntervalRef.current) {
+          clearInterval(periodicUploadIntervalRef.current)
+        }
+        
+        await processRecording(audioBlob, recordingId)
       }
 
-      mediaRecorder.start()
+      // Start recording with timeslice to get chunks every 30 seconds
+      mediaRecorder.start(30000) // 30 seconds
       setIsRecording(true)
       setRecordingTime(0)
+
+      // Set up periodic upload to Storage (every 5 minutes)
+      periodicUploadIntervalRef.current = setInterval(async () => {
+        try {
+          await uploadPartialRecording(recordingId)
+        } catch (error) {
+          console.error('Error uploading partial recording:', error)
+        }
+      }, STORAGE_UPLOAD_INTERVAL)
+
     } catch (error) {
       console.error('Error starting recording:', error)
       alert('Failed to access microphone. Please check permissions.')
     }
   }
 
+  // Upload partial recording to Storage as backup
+  const uploadPartialRecording = async (recordingId: string) => {
+    if (!userId || !recordingIdRef.current) return
+
+    try {
+      const { getChunks, getMetadata } = await import('@/lib/utils/recording-storage')
+      const chunks = await getChunks(recordingId)
+      
+      if (chunks.length === 0) return
+
+      // Combine chunks into single blob
+      const partialBlob = new Blob(chunks, { type: 'audio/webm' })
+      
+      // Create or get noteId for this recording
+      const metadata = await getMetadata(recordingId)
+      let noteId = metadata?.noteId
+
+      if (!noteId) {
+        // Create placeholder note if doesn't exist
+        const { data: newNote, error: createError } = await supabase
+          .from('lecture_notes')
+          .insert({
+            user_id: userId,
+            title: 'Lecture Recording (In Progress...)',
+            summary: 'Recording in progress...',
+            sections: [],
+            key_takeaways: [],
+            definitions: [],
+            source_type: 'recorded',
+            original_content: '',
+            processing_status: 'pending',
+          })
+          .select()
+          .single()
+
+        if (newNote && !createError) {
+          noteId = newNote.id
+          // Update metadata with noteId
+          if (metadata) {
+            metadata.noteId = noteId
+            const { saveMetadata } = await import('@/lib/utils/recording-storage')
+            await saveMetadata(metadata)
+          }
+        }
+      }
+
+      if (noteId) {
+        const fileName = `${userId}/${noteId}_partial.webm`
+        
+        // Upload partial recording to Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('lecture-recordings')
+          .upload(fileName, partialBlob, {
+            contentType: 'audio/webm',
+            upsert: true, // Overwrite previous partial
+          })
+
+        if (!uploadError) {
+          console.log('✅ Partial recording uploaded to Storage:', uploadData.path)
+          lastUploadTimeRef.current = Date.now()
+          setLastSaveTime(Date.now())
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading partial recording:', error)
+    }
+  }
+
+  // Resume incomplete recording
+  const resumeRecording = async (recordingId: string) => {
+    try {
+      const { getChunks, getMetadata, deleteRecording } = await import('@/lib/utils/recording-storage')
+      const chunks = await getChunks(recordingId)
+      const metadata = await getMetadata(recordingId)
+
+      if (!chunks || chunks.length === 0 || !metadata) {
+        alert('No recording data found to resume.')
+        return
+      }
+
+      // Combine chunks into single blob
+      const audioBlob = new Blob(chunks, { type: 'audio/webm' })
+      
+      // Process the recording
+      await processRecording(audioBlob, recordingId)
+      
+      // Clean up IndexedDB after successful processing
+      await deleteRecording(recordingId)
+    } catch (error) {
+      console.error('Error resuming recording:', error)
+      alert('Failed to resume recording. Please try again.')
+    }
+  }
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
+      // Clean up intervals
+      if (periodicSaveIntervalRef.current) {
+        clearInterval(periodicSaveIntervalRef.current)
+      }
+      if (periodicUploadIntervalRef.current) {
+        clearInterval(periodicUploadIntervalRef.current)
+      }
+      
       mediaRecorderRef.current.stop()
       setIsRecording(false)
     }
   }
 
-  const processRecording = async (audioBlob: Blob) => {
+  const processRecording = async (audioBlob: Blob, recordingId?: string) => {
     setIsProcessing(true)
 
     try {
@@ -295,7 +535,7 @@ export default function LectureNotesPage() {
         // If we have a transcript and can retry, show it
         if (data.transcript && data.canRetry) {
           // Transcript was saved, but note generation failed
-          alert(`Transcript saved successfully, but note generation failed. You can retry from your saved notes. Error: ${data.details || 'Unknown error'}`)
+          toast.error(`Transcript saved successfully, but note generation failed. You can retry from your saved notes. Error: ${data.details || 'Unknown error'}`)
           // Refresh notes list to show the failed one
           const { data: updatedNotes } = await supabase
             .from('lecture_notes')
@@ -311,26 +551,233 @@ export default function LectureNotesPage() {
         throw new Error(data.details || 'Failed to process recording')
       }
 
-      // Success - notes generated
+      // NEW: Handle async job processing (jobId response)
+      if (data.jobId) {
+        console.log(`📋 Job created: ${data.jobId}`)
+        setProcessingJobId(data.jobId)
+        setProcessingProgress(0)
+        setProcessingStatus('pending')
+        
+        // Clean up recording data
+        if (recordingId) {
+          try {
+            const { deleteRecording } = await import('@/lib/utils/recording-storage')
+            await deleteRecording(recordingId)
+          } catch (error) {
+            console.error('Error cleaning up recording data:', error)
+          }
+        }
+        
+        // Start polling for job status
+        await pollJobStatus(data.jobId, data.noteId)
+        return
+      }
+
+      // FALLBACK: Handle immediate notes (if still supported for backwards compatibility)
       if (data.notes) {
         setGeneratedNotes(data.notes)
         if (data.noteId) {
           setActiveNoteId(data.noteId)
+          
+          // Mark recording as complete in IndexedDB and clean up
+          if (recordingId) {
+            try {
+              const { markRecordingComplete, deleteRecording } = await import('@/lib/utils/recording-storage')
+              await markRecordingComplete(recordingId, data.noteId)
+              // Clean up IndexedDB after successful processing
+              await deleteRecording(recordingId)
+            } catch (error) {
+              console.error('Error cleaning up recording data:', error)
+            }
+          }
         }
         setMode('result')
       } else {
-        // Transcript saved but notes not generated yet (shouldn't happen, but handle it)
-        alert('Transcript saved. Generating notes...')
+        // No jobId and no notes - something went wrong
+        toast.error('Processing started but no job ID received. Please check your saved notes.')
         setMode('choose')
       }
     } catch (error: any) {
       console.error('Error processing recording:', error)
-      alert(`Failed to process recording: ${error.message || 'Unknown error'}. Your audio file may have been saved - check your saved notes.`)
+      toast.error(`Failed to process recording: ${error.message || 'Unknown error'}. Your audio file may have been saved - check your saved notes.`)
       setMode('choose')
     } finally {
       setIsProcessing(false)
+      // Reset recording ID
+      recordingIdRef.current = null
     }
   }
+
+  // Poll job status and trigger worker if needed
+  const pollJobStatus = async (jobId: string, noteId: string) => {
+    const maxAttempts = 300 // 10 minutes max (poll every 2 seconds)
+    let attempts = 0
+    let workerTriggered = false
+
+    const poll = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+          return
+        }
+
+        // Get job status from database
+        const { data: job, error } = await supabase
+          .from('lecture_processing_jobs')
+          .select('*')
+          .eq('id', jobId)
+          .single()
+
+        if (error || !job) {
+          console.error('Error fetching job status:', error)
+          // If job not found after a few attempts, stop polling
+          if (attempts > 5) {
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+            toast.error('Job not found. Please check your saved notes.')
+            setMode('choose')
+            setProcessingJobId(null)
+          }
+          attempts++
+          return
+        }
+
+        // Update UI with progress
+        setProcessingProgress(job.progress || 0)
+        setProcessingStatus(job.status || '')
+
+        // If pending, trigger worker (only once)
+        if (job.status === 'pending' && !workerTriggered) {
+          workerTriggered = true
+          console.log('🚀 Triggering worker for job:', jobId)
+          try {
+            const workerRes = await fetch('/api/lecture-notes/process-job', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({ jobId }),
+            })
+
+            if (!workerRes.ok) {
+              const workerData = await workerRes.json()
+              console.error('Error triggering worker:', workerData)
+              // Don't stop polling - worker might still process
+            } else {
+              console.log('✅ Worker triggered successfully')
+            }
+          } catch (err) {
+            console.error('Error triggering worker:', err)
+            // Don't stop polling - worker might still process
+          }
+        }
+
+        // If completed, load notes
+        if (job.status === 'completed') {
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+          
+          console.log('✅ Job completed, loading notes...')
+          
+          // Load the note from database
+          const { data: note, error: noteError } = await supabase
+            .from('lecture_notes')
+            .select('*')
+            .eq('id', noteId)
+            .single()
+
+          if (noteError || !note) {
+            console.error('Error loading note:', noteError)
+            toast.error('Notes generated but failed to load. Please refresh the page.')
+            setMode('choose')
+            setProcessingJobId(null)
+            setProcessingProgress(0)
+            setProcessingStatus('')
+            return
+          }
+
+          // Show notes
+          setGeneratedNotes({
+            title: note.title,
+            summary: note.summary,
+            sections: note.sections,
+            keyTakeaways: note.key_takeaways,
+            definitions: note.definitions,
+          })
+          setActiveNoteId(noteId)
+          setMode('result')
+          setProcessingJobId(null)
+          setProcessingProgress(0)
+          setProcessingStatus('')
+          toast.success('Notes generated successfully!')
+        }
+
+        // If failed, show error
+        if (job.status === 'failed') {
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+          
+          toast.error(`Processing failed: ${job.error_message || 'Unknown error'}. You can retry from saved notes.`)
+          setMode('choose')
+          setProcessingJobId(null)
+          setProcessingProgress(0)
+          setProcessingStatus('')
+          
+          // Refresh notes list
+          const { data: updatedNotes } = await supabase
+            .from('lecture_notes')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+          if (updatedNotes) {
+            setSavedNotes(updatedNotes)
+          }
+        }
+
+        attempts++
+        if (attempts >= maxAttempts) {
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+          toast.error('Processing is taking longer than expected. Please check your saved notes.')
+          setMode('choose')
+          setProcessingJobId(null)
+          setProcessingProgress(0)
+          setProcessingStatus('')
+        }
+      } catch (error) {
+        console.error('Error polling job status:', error)
+        // Continue polling on error (might be temporary)
+      }
+    }
+
+    // Poll immediately, then every 2 seconds
+    poll()
+    pollIntervalRef.current = setInterval(poll, 2000)
+
+    // Cleanup after 10 minutes (safety limit)
+    setTimeout(() => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+    }, 10 * 60 * 1000)
+  }
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
+    }
+  }, [])
 
   const handlePolishNotes = async () => {
     if (!roughNotes.trim()) return
@@ -358,7 +805,7 @@ export default function LectureNotesPage() {
       setMode('result')
     } catch (error) {
       console.error('Error polishing notes:', error)
-      alert('Failed to polish notes. Please try again.')
+      toast.error('Failed to polish notes. Please try again.')
     } finally {
       setIsProcessing(false)
     }
@@ -420,18 +867,29 @@ export default function LectureNotesPage() {
         setSavedNotes(updatedNotes)
       }
 
-      // Load the newly generated note
+      // Handle async job processing (if retry creates a new job)
+      if (data.jobId) {
+        console.log(`📋 Retry job created: ${data.jobId}`)
+        setProcessingJobId(data.jobId)
+        setProcessingProgress(0)
+        setProcessingStatus('pending')
+        await pollJobStatus(data.jobId, noteId)
+        return
+      }
+
+      // Load the newly generated note (if notes returned immediately)
       if (data.notes) {
         setGeneratedNotes(data.notes)
         setActiveNoteId(noteId)
         setMode('result')
+        toast.success('Notes generated successfully!')
       } else {
-        alert('Notes generated successfully! Refresh to see them.')
+        toast.success('Processing started. Your notes will be ready shortly.')
         setMode('choose')
       }
     } catch (error: any) {
       console.error('Error retrying note generation:', error)
-      alert(`Failed to retry: ${error.message || 'Unknown error'}`)
+      toast.error(`Failed to retry: ${error.message || 'Unknown error'}`)
     } finally {
       setIsProcessing(false)
     }
@@ -783,7 +1241,7 @@ export default function LectureNotesPage() {
               <div className="header-top">
                 <div>
                   <h1 className="page-title">Record Lecture</h1>
-                  <p className="page-subtitle">Click the button below to start recording</p>
+                  <p className="page-subtitle">Click the button below to start recording (up to 3 hours)</p>
                 </div>
                 <button onClick={() => setMode('choose')} className="btn-back">
                   Back
@@ -840,6 +1298,47 @@ export default function LectureNotesPage() {
                   <div className="recording-circle">🎙️</div>
                 </div>
                 <div className="recording-time">{formatRecordingTime(recordingTime)}</div>
+                {recordingTime >= MAX_RECORDING_TIME - 300 && (
+                  <div style={{
+                    color: recordingTime >= MAX_RECORDING_TIME - 60 ? 'var(--primary-red)' : 'var(--primary-yellow)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    marginTop: '0.5rem',
+                    textAlign: 'center',
+                  }}>
+                    {recordingTime >= MAX_RECORDING_TIME - 60 
+                      ? `⚠️ Recording will stop automatically in ${formatTimeRemaining(recordingTime)}`
+                      : `⏱️ ${formatTimeRemaining(recordingTime)} remaining (3-hour limit)`}
+                  </div>
+                )}
+                {recordingTime < MAX_RECORDING_TIME - 300 && (
+                  <div style={{
+                    color: 'var(--text-tertiary)',
+                    fontSize: '0.875rem',
+                    marginTop: '0.5rem',
+                    textAlign: 'center',
+                  }}>
+                    Max recording time: 3 hours
+                  </div>
+                )}
+                {/* Save status indicator */}
+                <div style={{
+                  color: 'var(--primary-green)',
+                  fontSize: '0.75rem',
+                  marginTop: '0.5rem',
+                  textAlign: 'center',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.25rem',
+                }}>
+                  <span>💾</span>
+                  <span>
+                    Auto-saving every 30s • Last backup: {lastSaveTime 
+                      ? `${Math.floor((Date.now() - lastSaveTime) / 1000)}s ago`
+                      : 'Just now'}
+                  </span>
+                </div>
                 <div className="recording-controls">
                   <button className="btn-stop-recording" onClick={stopRecording}>
                     Stop Recording
@@ -852,32 +1351,69 @@ export default function LectureNotesPage() {
       )
     }
 
-    // Processing recording
-      return (
-        <>
-          <div className="noise-bg"></div>
-          <Navigation />
-          <div className="container">
-            <div className="recording-interface">
-            <div className="recording-card">
-              <div className="recording-visualizer">
-                <div
-                  className="recording-circle"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(168, 85, 247, 0.2))',
-                    border: '3px solid var(--primary-cyan)',
-                  }}
-                >
-                  <div className="spinner" style={{ width: '60px', height: '60px', border: '4px solid rgba(6, 182, 212, 0.3)', borderTopColor: 'var(--primary-cyan)' }}></div>
+          // Processing recording
+            return (
+              <>
+                <div className="noise-bg"></div>
+                <Navigation />
+                <div className="container">
+                  <div className="recording-interface">
+                  <div className="recording-card">
+                    <div className="recording-visualizer">
+                      <div
+                        className="recording-circle"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(168, 85, 247, 0.2))',
+                          border: '3px solid var(--primary-cyan)',
+                        }}
+                      >
+                        <div className="spinner" style={{ width: '60px', height: '60px', border: '4px solid rgba(6, 182, 212, 0.3)', borderTopColor: 'var(--primary-cyan)' }}></div>
+                      </div>
+                    </div>
+                    <h2 className="option-title">Processing Recording...</h2>
+                    <p className="option-description">
+                      {processingStatus === 'pending' && 'Starting processing...'}
+                      {processingStatus === 'transcribing' && `Transcribing audio... ${processingProgress}%`}
+                      {processingStatus === 'generating_notes' && `Generating notes... ${processingProgress}%`}
+                      {processingStatus === 'chunking_transcript' && `Processing long transcript... ${processingProgress}%`}
+                      {processingStatus === 'merging' && `Finalizing notes... ${processingProgress}%`}
+                      {!processingStatus && 'Transcribing and generating your notes'}
+                    </p>
+                    
+                    {/* Progress Bar */}
+                    {processingJobId && (
+                      <div style={{ marginTop: '1.5rem', width: '100%', maxWidth: '400px', margin: '1.5rem auto 0' }}>
+                        <div style={{ 
+                          width: '100%', 
+                          height: '8px', 
+                          background: 'var(--border-subtle)', 
+                          borderRadius: '4px',
+                          overflow: 'hidden',
+                          marginBottom: '0.5rem'
+                        }}>
+                          <div style={{
+                            width: `${processingProgress}%`,
+                            height: '100%',
+                            background: 'linear-gradient(90deg, var(--primary-cyan), var(--primary-purple))',
+                            transition: 'width 0.3s ease',
+                            borderRadius: '4px'
+                          }}></div>
+                        </div>
+                        <p style={{ 
+                          color: 'var(--text-secondary)', 
+                          fontSize: '0.875rem',
+                          textAlign: 'center',
+                          marginTop: '0.5rem'
+                        }}>
+                          {processingProgress}% complete
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <h2 className="option-title">Processing Recording...</h2>
-              <p className="option-description">Transcribing and generating your notes</p>
-            </div>
-          </div>
-        </div>
-      </>
-    )
+            </>
+           )
   }
 
   // Type notes mode

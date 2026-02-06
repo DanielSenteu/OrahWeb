@@ -1,6 +1,6 @@
 // Edge Function: lecture_notes_audio
-// Processes audio recordings: transcribes with Whisper, saves transcript immediately,
-// then generates organized notes. No timeout limits - perfect for long recordings.
+// Creates processing jobs for async background processing
+// Returns immediately with job ID - worker processes in background
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
@@ -9,7 +9,6 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || ""
 const ASSEMBLYAI_API_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") || ""
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-// SUPABASE_ANON_KEY not needed for this function
 
 interface RequestBody {
   userId: string
@@ -17,14 +16,6 @@ interface RequestBody {
   audio?: string // base64 encoded audio (fallback for backwards compatibility)
   saveOnlyTranscript?: boolean // If true, only save transcript, don't generate notes
   noteId?: string // If provided, update existing note instead of creating new
-}
-
-interface GeneratedNotes {
-  title: string
-  summary: string
-  sections: Array<{ title: string; content: string[] }>
-  keyTakeaways: string[]  
-  definitions: Array<{ term: string; definition: string }>
 }
 
 serve(async (req) => {
@@ -124,7 +115,7 @@ serve(async (req) => {
           if (fileData) {
             fileSizeMB = fileData.size / (1024 * 1024)
           }
-        } catch {
+        } catch (e) {
           console.log("⚠️ Could not determine file size, proceeding anyway")
           fileSizeMB = 0
         }
@@ -206,7 +197,7 @@ serve(async (req) => {
           body: JSON.stringify({
             audio_url: publicAudioUrl,
             language_detection: true,
-            speech_model: "universal-3-pro", // Best quality for English
+            speech_model: "universal-3-pro",
             punctuate: true,
             format_text: true,
           }),
@@ -283,9 +274,9 @@ serve(async (req) => {
 
       // Only add processing_status if column exists
       try {
-        updateData.processing_status = saveOnlyTranscript ? "pending" : "processing"
+        updateData.processing_status = saveOnlyTranscript ? "pending" : "pending"
         updateData.error_message = null
-      } catch (e) {
+      } catch {
         // Column doesn't exist yet
       }
 
@@ -321,8 +312,7 @@ serve(async (req) => {
       }
     } else {
       // Create new note with transcript
-      // Try with processing_status first, fallback to without if column doesn't exist
-      const insertData: any = {
+      const insertData: Record<string, unknown> = {
         user_id: userId,
         title: "Lecture Recording (Processing...)",
         summary: "Transcript saved. Generating notes...",
@@ -333,11 +323,10 @@ serve(async (req) => {
         original_content: transcript,
       }
 
-      // Only add processing_status if column exists (will be added via migration)
-      // If migration hasn't been run, this will fail and we'll retry without it
+      // Only add processing_status if column exists
       try {
-        insertData.processing_status = saveOnlyTranscript ? "pending" : "processing"
-      } catch (e) {
+        insertData.processing_status = saveOnlyTranscript ? "pending" : "pending"
+      } catch {
         // Column doesn't exist yet - will be added by migration
       }
 
@@ -403,326 +392,51 @@ serve(async (req) => {
       )
     }
 
-    // Generate organized notes from transcript
-    console.log("📝 Generating organized notes...")
-    
-    // Check transcript length - if too long, chunk it for parallel processing
-    const transcriptTokens = Math.ceil(transcript.length / 4) // Rough estimate: 1 token ≈ 4 characters
-    const MAX_TOKENS_FOR_NOTES = 80000 // Leave room for prompt and response (GPT-4o-mini has 128k context)
-    
-    let finalNotes: GeneratedNotes
-    
-    if (transcriptTokens > MAX_TOKENS_FOR_NOTES) {
-      console.log(`📦 Transcript is very long (${transcriptTokens.toLocaleString()} tokens). Chunking for parallel processing...`)
-      
-      // Chunk transcript intelligently
-      const chunks = chunkTranscript(transcript)
-      console.log(`📦 Split into ${chunks.length} chunks for parallel processing`)
-      
-      // Process chunks in parallel for speed
-      const chunkPromises = chunks.map(async (chunk, index) => {
-        console.log(`🔄 Processing chunk ${index + 1}/${chunks.length}...`)
-        return generateNotesForChunk(chunk.text, index)
-      })
-      
-      const chunkNotes = await Promise.all(chunkPromises)
-      console.log(`✅ All ${chunks.length} chunks processed`)
-      
-      // Merge notes from all chunks
-      console.log("🔀 Merging notes from all chunks...")
-      finalNotes = mergeNotes(chunkNotes.map((n, i) => ({ ...n, chunkIndex: i })))
-      console.log("✅ Notes merged successfully")
-    } else {
-      // Single chunk - process normally
-      finalNotes = await generateNotesForChunk(transcript, 0)
-    }
-    
-    // Helper function to generate notes for a single chunk
-    async function generateNotesForChunk(chunkText: string, chunkIndex: number): Promise<GeneratedNotes> {
-      const notesPrompt = `You are an ELITE note-taker creating EXAM-READY study notes. Your notes should be so thorough that a student could learn the entire lecture from your notes alone.
+    // Create processing job (async)
+    console.log("📋 Creating processing job...")
 
-CRITICAL DEPTH REQUIREMENTS:
-1. **Examples are MANDATORY**: Every concept must include specific examples from the lecture
-2. **Explain WHY and HOW**, not just WHAT
-3. **Multi-sentence bullets**: Each bullet = 1-3 sentences with complete info
-4. **Include ALL details**: Numbers, formulas, step-by-step processes
-5. **Study-ready**: Detailed enough to ace the exam using only these notes
-
-Return ONLY valid JSON:
-{
-  "title": "Lecture title${chunkIndex > 0 ? ` (Part ${chunkIndex + 1})` : ""}",
-  "summary": "Comprehensive 2-3 sentence overview",
-  "sections": [
-    {
-      "title": "Section name",
-      "content": [
-        "Detailed multi-sentence bullet with examples and explanations",
-        "Another comprehensive bullet with WHY and HOW, not just WHAT"
-      ]
-    }
-  ],
-  "definitions": [
-    {"term": "Term", "definition": "Complete definition with context, examples, and why it matters"}
-  ],
-  "keyTakeaways": ["Comprehensive takeaway with reasoning and examples"]
-}
-
-ADDITIONAL CAPTURE REQUIREMENTS:
-6. **Exact examples with real data**: Capture EXACT strings, numbers, arrays used in examples
-7. **Homework/assignments**: Note any practice problems or homework mentioned
-8. **Administrative info**: Office hours, due dates, next lecture topics
-9. **Professor's tips**: Study advice, common mistakes, exam hints
-10. **Decision frameworks**: "When to use X" or "How to identify Y problems"
-
-Make these notes so comprehensive that students can ace exams AND complete homework using only these notes.`
-
-      const notesResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
+    const { data: job, error: jobError } = await dbSupabase
+      .from("lecture_processing_jobs")
+      .insert({
+        note_id: savedNoteId,
+        user_id: userId,
+        status: "pending",
+        progress: 0,
+        metadata: {
+          audio_url: audioUrl || null,
+          has_transcript: !!transcript,
         },
-        body: JSON.stringify({
-          model: "gpt-4o-mini-2024-07-18",
-          messages: [
-            { role: "system", content: notesPrompt },
-            {
-              role: "user",
-              content: `Create organized notes from this lecture transcript${chunkIndex > 0 ? ` (chunk ${chunkIndex + 1})` : ""}:\n\n${chunkText}`,
-            },
-          ],
-          temperature: 0.7,
-          max_tokens: 16000,
-          response_format: { type: "json_object" },
-        }),
       })
+      .select()
+      .single()
 
-      if (!notesResponse.ok) {
-        const errorText = await notesResponse.text()
-        throw new Error(`Notes generation failed for chunk ${chunkIndex + 1}: ${notesResponse.status} ${errorText}`)
-      }
-
-      const notesData = await notesResponse.json()
-      const notesContent = notesData.choices[0]?.message?.content
-
-      if (!notesContent) {
-        throw new Error(`Failed to generate notes for chunk ${chunkIndex + 1}`)
-      }
-
-      return JSON.parse(notesContent)
-    }
-    
-    // Helper function to chunk transcript intelligently
-    function chunkTranscript(text: string): Array<{ text: string; index: number }> {
-      const OVERLAP_WORDS = 200
-      const MAX_CHUNK_TOKENS = 80000
-      const TOKENS_PER_CHAR = 0.25
-      
-      const estimatedTokens = Math.ceil(text.length * TOKENS_PER_CHAR)
-      
-      if (estimatedTokens <= MAX_CHUNK_TOKENS) {
-        return [{ text, index: 0 }]
-      }
-      
-      // Split into sentences
-      const sentenceEndings = /[.!?]\s+/g
-      const sentences: string[] = []
-      let lastIndex = 0
-      let match
-
-      while ((match = sentenceEndings.exec(text)) !== null) {
-        const sentence = text.substring(lastIndex, match.index + match[0].length)
-        if (sentence.trim().length > 0) {
-          sentences.push(sentence.trim())
-        }
-        lastIndex = match.index + match[0].length
-      }
-
-      if (lastIndex < text.length) {
-        const remaining = text.substring(lastIndex).trim()
-        if (remaining.length > 0) {
-          sentences.push(remaining)
-        }
-      }
-      
-      // Group sentences into chunks
-      const chunks: Array<{ text: string; index: number }> = []
-      let currentChunk: string[] = []
-      let currentTokens = 0
-      let chunkIndex = 0
-
-      for (let i = 0; i < sentences.length; i++) {
-        const sentence = sentences[i]
-        const sentenceTokens = Math.ceil(sentence.length * TOKENS_PER_CHAR)
-
-        if (currentTokens + sentenceTokens > MAX_CHUNK_TOKENS && currentChunk.length > 0) {
-          const chunkText = currentChunk.join(' ')
-          chunks.push({ text: chunkText, index: chunkIndex++ })
-
-          // Start new chunk with overlap
-          const overlapSentences = getOverlapSentences(currentChunk, OVERLAP_WORDS)
-          currentChunk = [...overlapSentences, sentence]
-          currentTokens = overlapSentences.reduce((sum, s) => sum + Math.ceil(s.length * TOKENS_PER_CHAR), 0) + sentenceTokens
-        } else {
-          currentChunk.push(sentence)
-          currentTokens += sentenceTokens
-        }
-      }
-
-      if (currentChunk.length > 0) {
-        const chunkText = currentChunk.join(' ')
-        chunks.push({ text: chunkText, index: chunkIndex })
-      }
-
-      return chunks
-    }
-    
-    function getOverlapSentences(sentences: string[], targetWords: number): string[] {
-      const overlap: string[] = []
-      let wordCount = 0
-
-      for (let i = sentences.length - 1; i >= 0 && wordCount < targetWords; i--) {
-        const sentence = sentences[i]
-        const words = sentence.split(/\s+/).length
-        overlap.unshift(sentence)
-        wordCount += words
-      }
-
-      return overlap
-    }
-    
-    // Helper function to merge notes from multiple chunks
-    function mergeNotes(chunkNotes: Array<GeneratedNotes & { chunkIndex: number }>): GeneratedNotes {
-      if (chunkNotes.length === 1) {
-        return chunkNotes[0]
-      }
-      
-      // Use title from first chunk
-      const title = chunkNotes[0].title.replace(/ \(Part \d+\)$/, '') || 'Lecture Notes'
-      
-      // Merge summaries
-      const summaries = chunkNotes.filter(n => n.summary).map(n => n.summary)
-      const summary = summaries.length > 0
-        ? summaries.length === 1
-          ? summaries[0]
-          : `${summaries[0]} ${summaries[summaries.length - 1]}`
-        : ''
-      
-      // Merge sections (deduplicate similar titles)
-      const sectionMap = new Map<string, { title: string; content: string[] }>()
-      for (const note of chunkNotes) {
-        for (const section of note.sections) {
-          const normalizedTitle = section.title.toLowerCase().trim()
-          const existing = sectionMap.get(normalizedTitle)
-          
-          if (existing) {
-            // Merge content, deduplicate
-            const existingContent = new Set(existing.content.map(c => c.toLowerCase().trim()))
-            for (const item of section.content) {
-              if (!existingContent.has(item.toLowerCase().trim())) {
-                existing.content.push(item)
-              }
-            }
-          } else {
-            sectionMap.set(normalizedTitle, { title: section.title, content: [...section.content] })
-          }
-        }
-      }
-      
-      // Merge definitions (keep longest)
-      const defMap = new Map<string, { term: string; definition: string }>()
-      for (const note of chunkNotes) {
-        for (const def of note.definitions) {
-          const normalizedTerm = def.term.toLowerCase().trim()
-          const existing = defMap.get(normalizedTerm)
-          
-          if (!existing || def.definition.length > existing.definition.length) {
-            defMap.set(normalizedTerm, { term: def.term, definition: def.definition })
-          }
-        }
-      }
-      
-      // Merge takeaways (deduplicate similar)
-      const takeawaySet = new Set<string>()
-      const takeaways: string[] = []
-      
-      for (const note of chunkNotes) {
-        for (const takeaway of note.keyTakeaways) {
-          const normalized = takeaway.toLowerCase().trim()
-          if (!takeawaySet.has(normalized)) {
-            takeawaySet.add(normalized)
-            takeaways.push(takeaway)
-          }
-        }
-      }
-      
-      return {
-        title,
-        summary,
-        sections: Array.from(sectionMap.values()),
-        definitions: Array.from(defMap.values()),
-        keyTakeaways: takeaways,
-      }
+    if (jobError || !job) {
+      throw new Error(`Failed to create processing job: ${jobError?.message || "Unknown error"}`)
     }
 
-    // Update the saved note with generated notes
-    const updateData: Record<string, unknown> = {
-      title: finalNotes.title,
-      summary: finalNotes.summary,
-      sections: finalNotes.sections,
-      key_takeaways: finalNotes.keyTakeaways,
-      definitions: finalNotes.definitions,
-    }
+    console.log(`✅ Job created: ${job.id}`)
 
-    // Only add processing_status if column exists
+    // Update note status to pending
     try {
-      updateData.processing_status = "completed"
-      updateData.error_message = null
-    } catch (e) {
-      // Column doesn't exist yet
+      await dbSupabase
+        .from("lecture_notes")
+        .update({
+          processing_status: "pending",
+        })
+        .eq("id", savedNoteId)
+    } catch {
+      // Column might not exist yet - that's okay
+      console.log("⚠️ Could not update processing_status (column may not exist)")
     }
 
-    const { error: updateError } = await dbSupabase
-      .from("lecture_notes")
-      .update(updateData)
-      .eq("id", savedNoteId)
-      .eq("user_id", userId)
-
-    if (updateError) {
-      // If error is about missing column, try without processing_status
-      if (updateError.code === "PGRST204" && updateError.message?.includes("processing_status")) {
-        console.log("⚠️ processing_status column not found, updating without it (run migration)")
-                const { error: fallbackError } = await dbSupabase
-                  .from("lecture_notes")
-                  .update({
-                    title: finalNotes.title,
-                    summary: finalNotes.summary,
-                    sections: finalNotes.sections,
-                    key_takeaways: finalNotes.keyTakeaways,
-                    definitions: finalNotes.definitions,
-                  })
-          .eq("id", savedNoteId)
-          .eq("user_id", userId)
-
-        if (fallbackError) {
-          console.error("⚠️ Error updating notes:", fallbackError)
-        } else {
-          console.log("✅ Notes saved to database (without processing_status - migration needed)")
-        }
-      } else {
-        console.error("⚠️ Error updating notes:", updateError)
-      }
-      // Still return notes to user even if DB update fails
-    } else {
-      console.log("✅ Notes saved to database")
-    }
-
-          return new Response(
-            JSON.stringify({
-              notes: finalNotes,
-              transcript,
-              noteId: savedNoteId,
-            }),
+    // Return job ID immediately - worker will process in background
+    return new Response(
+      JSON.stringify({
+        jobId: job.id,
+        noteId: savedNoteId,
+        status: "pending",
+        message: "Processing started. Your notes will be ready shortly.",
+      }),
       {
         status: 200,
         headers: {
