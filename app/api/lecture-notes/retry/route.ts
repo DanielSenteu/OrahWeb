@@ -5,12 +5,12 @@ import { createClient } from '@supabase/supabase-js'
 const EDGE_URL = process.env.NEXT_PUBLIC_EDGE_FUNCTION_LECTURE_NOTES_AUDIO || 
                  'https://ffudidfxurrjcjredfjg.supabase.co/functions/v1/smooth-task'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
 export async function POST(request: NextRequest) {
+  // Initialize Supabase inside handler to avoid build-time evaluation
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
   try {
     const { noteId, userId } = await request.json()
 
