@@ -833,15 +833,24 @@ export default function LectureNotesPage() {
   }, [showQa, activeNoteId])
 
   const retryNoteGeneration = async (noteId: string) => {
-    if (!userId) return
+    console.log('🔄 Retry button clicked for note:', noteId)
+    
+    if (!userId) {
+      console.error('❌ No userId available')
+      toast.error('Please log in to retry note generation')
+      return
+    }
 
     setIsProcessing(true)
     try {
+      console.log('🔐 Getting session...')
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
+        console.error('❌ No session found')
         throw new Error('Not authenticated')
       }
 
+      console.log('📡 Calling retry API...', { noteId, userId })
       const res = await fetch('/api/lecture-notes/retry', {
         method: 'POST',
         headers: { 
@@ -851,10 +860,14 @@ export default function LectureNotesPage() {
         body: JSON.stringify({ noteId, userId }),
       })
 
+      console.log('📥 Retry API response:', res.status, res.statusText)
+
       const data = await res.json()
+      console.log('📥 Retry API response data:', data)
 
       if (!res.ok) {
-        throw new Error(data.details || 'Failed to retry note generation')
+        console.error('❌ Retry API error:', data)
+        throw new Error(data.details || data.error || 'Failed to retry note generation')
       }
 
       // Handle async job processing (if retry creates a new job)
@@ -1030,14 +1043,22 @@ export default function LectureNotesPage() {
                           <button
                             className="btn-polish"
                             onClick={async (e) => {
+                              e.preventDefault()
                               e.stopPropagation()
-                              await retryNoteGeneration(note.id)
+                              console.log('🔵 Generate Notes button clicked for note:', note.id, 'status:', note.processing_status)
+                              try {
+                                await retryNoteGeneration(note.id)
+                              } catch (err) {
+                                console.error('❌ Error in button click handler:', err)
+                                toast.error(`Failed to retry: ${err instanceof Error ? err.message : 'Unknown error'}`)
+                              }
                             }}
                             style={{
                               background: 'var(--primary-cyan)',
                               color: 'white',
                               padding: '0.5rem 1rem',
                               fontSize: '0.875rem',
+                              cursor: 'pointer',
                             }}
                           >
                             {note.processing_status === 'pending' ? 'Generate Notes' : 'Retry'}
@@ -1115,14 +1136,22 @@ export default function LectureNotesPage() {
                         <button
                           className="btn-polish"
                           onClick={async (e) => {
+                            e.preventDefault()
                             e.stopPropagation()
-                            await retryNoteGeneration(note.id)
+                            console.log('🔴 Retry button clicked for failed note:', note.id)
+                            try {
+                              await retryNoteGeneration(note.id)
+                            } catch (err) {
+                              console.error('❌ Error in button click handler:', err)
+                              toast.error(`Failed to retry: ${err instanceof Error ? err.message : 'Unknown error'}`)
+                            }
                           }}
                           style={{
                             background: 'var(--primary-red)',
                             color: 'white',
                             padding: '0.5rem 1rem',
                             fontSize: '0.875rem',
+                            cursor: 'pointer',
                           }}
                         >
                           Retry

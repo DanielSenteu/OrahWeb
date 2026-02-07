@@ -6,13 +6,17 @@ const WORKER_URL = process.env.NEXT_PUBLIC_EDGE_FUNCTION_LECTURE_NOTES_WORKER ||
                    'https://ffudidfxurrjcjredfjg.supabase.co/functions/v1/lecture_notes_worker'
 
 export async function POST(request: NextRequest) {
+  console.log('🔄 Retry API called')
+  
   // Initialize Supabase inside handler to avoid build-time evaluation
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
   try {
-    const { noteId, userId } = await request.json()
+    const body = await request.json()
+    const { noteId, userId } = body
+    console.log('📋 Retry request:', { noteId, userId })
 
     if (!noteId || !userId) {
       return NextResponse.json({ error: 'Missing noteId or userId' }, { status: 400 })
@@ -34,12 +38,23 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (fetchError || !note) {
-      return NextResponse.json({ error: 'Note not found' }, { status: 404 })
+      console.error('❌ Note not found:', fetchError)
+      return NextResponse.json({ error: 'Note not found', details: fetchError?.message }, { status: 404 })
     }
 
     // Check if we have transcript or audio to process
+    console.log('📋 Note data:', { 
+      hasTranscript: !!note.original_content, 
+      hasAudio: !!note.audio_url,
+      transcriptLength: note.original_content?.length || 0 
+    })
+    
     if (!note.original_content && !note.audio_url) {
-      return NextResponse.json({ error: 'No transcript or audio found for this note' }, { status: 400 })
+      console.error('❌ No transcript or audio found for note:', noteId)
+      return NextResponse.json({ 
+        error: 'No transcript or audio found for this note',
+        details: 'This note has no transcript or audio file. Please record or type a new lecture.'
+      }, { status: 400 })
     }
 
     const retryCount = (note.retry_count || 0) + 1
