@@ -8,11 +8,24 @@ const WORKER_URL = process.env.NEXT_PUBLIC_EDGE_FUNCTION_LECTURE_NOTES_WORKER ||
 export async function POST(request: NextRequest) {
   console.log('🔄 Retry API called')
   
-  // Initialize Supabase inside handler to avoid build-time evaluation
+  // Get auth token from request first
+  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
+  if (!authHeader) {
+    console.error('❌ Missing authorization header')
+    return NextResponse.json({ error: 'Missing authorization header' }, { status: 401 })
+  }
+
+  // Initialize Supabase with user's auth token to bypass RLS
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: { Authorization: authHeader },
+      },
+    }
   )
+  
   try {
     const body = await request.json()
     const { noteId, userId } = body
@@ -30,6 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch the note to check if it has transcript or audio
+    // Using authenticated client so RLS allows access
     const { data: note, error: fetchError } = await supabase
       .from('lecture_notes')
       .select('original_content, audio_url, retry_count')
@@ -113,13 +127,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`🔄 Retrying note generation (attempt ${retryCount}) for note: ${noteId}, job: ${jobId}`)
 
-    // Get auth token from request
-    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
-    if (!authHeader) {
-      return NextResponse.json({ error: 'Missing authorization header' }, { status: 401 })
-    }
-
-    // Call worker directly with jobId
+    // Call worker directly with jobId (authHeader already retrieved above)
     const res = await fetch(WORKER_URL, {
       method: 'POST',
       headers: {
