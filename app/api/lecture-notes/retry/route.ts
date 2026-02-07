@@ -63,7 +63,58 @@ export async function POST(request: NextRequest) {
       transcriptLength: note.original_content?.length || 0 
     })
     
-    if (!note.original_content && !note.audio_url) {
+    let audioUrl = note.audio_url
+    
+    // If no audio_url in note, check if audio file exists in Storage
+    // Old failed lectures might have audio in Storage but not linked in the note
+    if (!audioUrl) {
+      console.log('🔍 No audio_url in note, checking Storage for audio file...')
+      const expectedPath = `${userId}/${noteId}.webm`
+      
+      // Check if file exists in Storage
+      const { data: fileList, error: listError } = await supabase.storage
+        .from('lecture-recordings')
+        .list(userId, {
+          search: `${noteId}.webm`
+        })
+      
+      if (!listError && fileList && fileList.length > 0) {
+        // Found the file! Use the full path
+        audioUrl = `${userId}/${noteId}.webm`
+        console.log('✅ Found audio file in Storage:', audioUrl)
+        
+        // Update the note with the audio_url for future reference
+        await supabase
+          .from('lecture_notes')
+          .update({ audio_url: audioUrl })
+          .eq('id', noteId)
+          .eq('user_id', userId)
+      } else {
+        // Also check for partial file
+        const { data: partialList } = await supabase.storage
+          .from('lecture-recordings')
+          .list(userId, {
+            search: `${noteId}_partial.webm`
+          })
+        
+        if (partialList && partialList.length > 0) {
+          audioUrl = `${userId}/${noteId}_partial.webm`
+          console.log('✅ Found partial audio file in Storage:', audioUrl)
+          
+          // Update the note with the audio_url
+          await supabase
+            .from('lecture_notes')
+            .update({ audio_url: audioUrl })
+            .eq('id', noteId)
+            .eq('user_id', userId)
+        } else {
+          console.log('⚠️ No audio file found in Storage for note:', noteId)
+        }
+      }
+    }
+    
+    // Final check: need either transcript or audio
+    if (!note.original_content && !audioUrl) {
       console.error('❌ No transcript or audio found for note:', noteId)
       return NextResponse.json({ 
         error: 'No transcript or audio found for this note',
@@ -98,7 +149,7 @@ export async function POST(request: NextRequest) {
           note_id: noteId,
           status: 'pending',
           progress: 0,
-          audio_url: note.audio_url || null,
+          audio_url: audioUrl || null, // Use the found audioUrl (from note or Storage)
         })
         .select('id')
         .single()
