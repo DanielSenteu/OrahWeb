@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// Edge function URL for lecture notes audio processing
-const EDGE_URL = process.env.NEXT_PUBLIC_EDGE_FUNCTION_LECTURE_NOTES_AUDIO || 
-                 'https://ffudidfxurrjcjredfjg.supabase.co/functions/v1/smooth-task'
+// Worker Edge Function URL - calls worker directly with noteId
+const WORKER_URL = process.env.NEXT_PUBLIC_EDGE_FUNCTION_LECTURE_NOTES_WORKER || 
+                   'https://ffudidfxurrjcjredfjg.supabase.co/functions/v1/lecture_notes_worker'
 
 export async function POST(request: NextRequest) {
   // Initialize Supabase inside handler to avoid build-time evaluation
@@ -18,17 +18,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing noteId or userId' }, { status: 400 })
     }
 
-    if (!EDGE_URL) {
+    if (!WORKER_URL) {
       return NextResponse.json(
-        { error: 'Missing edge function URL. Please set NEXT_PUBLIC_EDGE_FUNCTION_LECTURE_NOTES_AUDIO' },
+        { error: 'Missing worker URL. Please set NEXT_PUBLIC_EDGE_FUNCTION_LECTURE_NOTES_WORKER' },
         { status: 500 }
       )
     }
 
-    // Fetch the saved transcript
+    // Fetch the note to check if it has transcript or audio
     const { data: note, error: fetchError } = await supabase
       .from('lecture_notes')
-      .select('original_content, retry_count')
+      .select('original_content, audio_url, retry_count')
       .eq('id', noteId)
       .eq('user_id', userId)
       .single()
@@ -37,13 +37,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 })
     }
 
-    if (!note.original_content) {
-      return NextResponse.json({ error: 'No transcript found for this note' }, { status: 400 })
+    // Check if we have transcript or audio to process
+    if (!note.original_content && !note.audio_url) {
+      return NextResponse.json({ error: 'No transcript or audio found for this note' }, { status: 400 })
     }
 
     const retryCount = (note.retry_count || 0) + 1
 
-    // Update status to processing
+    // Check for existing stuck job and create new one if needed
+    const { data: existingJobs } = await supabase
+      .from('lecture_processing_jobs')
+      .select('id, status')
+      .eq('note_id', noteId)
+      .eq('user_id', userId)
+      .in('status', ['pending', 'transcribing', 'generating_notes'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    let jobId: string | null = null
+
+    if (existingJobs && existingJobs.length > 0 && existingJobs[0].status === 'pending') {
+      // Use existing pending job
+      jobId = existingJobs[0].id
+      console.log(`🔄 Using existing pending job: ${jobId}`)
+    } else {
+      // Create new job
+      const { data: newJob, error: jobError } = await supabase
+        .from('lecture_processing_jobs')
+        .insert({
+          user_id: userId,
+          note_id: noteId,
+          status: 'pending',
+          progress: 0,
+          audio_url: note.audio_url || null,
+        })
+        .select('id')
+        .single()
+
+      if (jobError || !newJob) {
+        console.error('❌ Error creating job:', jobError)
+        return NextResponse.json(
+          { error: 'Failed to create processing job', details: jobError?.message },
+          { status: 500 }
+        )
+      }
+
+      jobId = newJob.id
+      console.log(`✅ Created new job: ${jobId}`)
+    }
+
+    // Update note status
     await supabase
       .from('lecture_notes')
       .update({
@@ -53,7 +96,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', noteId)
 
-    console.log(`🔄 Retrying note generation (attempt ${retryCount}) for note: ${noteId}`)
+    console.log(`🔄 Retrying note generation (attempt ${retryCount}) for note: ${noteId}, job: ${jobId}`)
 
     // Get auth token from request
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
@@ -61,19 +104,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing authorization header' }, { status: 401 })
     }
 
-    // Call edge function with noteId (no audio needed - uses existing transcript)
-    const res = await fetch(EDGE_URL, {
+    // Call worker directly with jobId
+    const res = await fetch(WORKER_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: authHeader,
         apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
       },
-      body: JSON.stringify({
-        userId,
-        noteId, // Edge function will fetch transcript from this noteId
-        saveOnlyTranscript: false,
-      }),
+      body: JSON.stringify({ jobId }),
     })
 
     const data = await res.json()
@@ -98,7 +137,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ notes: data.notes, noteId })
+    // Return jobId for frontend polling
+    return NextResponse.json({ jobId, noteId, status: 'processing' })
   } catch (error: any) {
     console.error('❌ Retry error:', error)
 

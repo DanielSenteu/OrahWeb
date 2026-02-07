@@ -857,7 +857,35 @@ export default function LectureNotesPage() {
         throw new Error(data.details || 'Failed to retry note generation')
       }
 
-      // Update the note in the list
+      // Handle async job processing (if retry creates a new job)
+      if (data.jobId) {
+        console.log(`📋 Retry job created: ${data.jobId}`)
+        
+        // Update the note in the list to show processing status
+        const { data: updatedNotes } = await supabase
+          .from('lecture_notes')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+
+        if (updatedNotes) {
+          setSavedNotes(updatedNotes)
+        }
+        
+        setProcessingJobId(data.jobId)
+        setProcessingProgress(0)
+        setProcessingStatus('pending')
+        
+        // Show processing UI
+        setMode('record') // This will show processing UI
+        setIsProcessing(true)
+        
+        // Start polling
+        await pollJobStatus(data.jobId, noteId)
+        return
+      }
+
+      // Update the note in the list (for immediate notes)
       const { data: updatedNotes } = await supabase
         .from('lecture_notes')
         .select('*')
@@ -866,16 +894,6 @@ export default function LectureNotesPage() {
 
       if (updatedNotes) {
         setSavedNotes(updatedNotes)
-      }
-
-      // Handle async job processing (if retry creates a new job)
-      if (data.jobId) {
-        console.log(`📋 Retry job created: ${data.jobId}`)
-        setProcessingJobId(data.jobId)
-        setProcessingProgress(0)
-        setProcessingStatus('pending')
-        await pollJobStatus(data.jobId, noteId)
-        return
       }
 
       // Load the newly generated note (if notes returned immediately)
@@ -1008,7 +1026,7 @@ export default function LectureNotesPage() {
                             • {note.source_type === 'recorded' ? '🎙️ Recorded' : '✍️ Typed'}
                           </p>
                         </div>
-                        {note.processing_status === 'pending' && (
+                        {(note.processing_status === 'pending' || note.processing_status === 'failed') && (
                           <button
                             className="btn-polish"
                             onClick={async (e) => {
@@ -1022,7 +1040,7 @@ export default function LectureNotesPage() {
                               fontSize: '0.875rem',
                             }}
                           >
-                            Generate Notes
+                            {note.processing_status === 'pending' ? 'Generate Notes' : 'Retry'}
                           </button>
                         )}
                         {note.processing_status === 'processing' && (

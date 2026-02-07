@@ -108,28 +108,38 @@ serve(async (req) => {
     }
 
     // Only transcribe if we don't have a transcript (not a retry)
+    let useAssemblyAI = false
+    let audioUrlForJob: string | null = null
+    
     if (!transcript && (audioUrl || audio)) {
       console.log("🎙️ Starting audio transcription...")
 
       let fileSizeMB: number = 0
-      let publicAudioUrl: string = ""
       let estimatedDurationMinutes: number = 0
       const DURATION_THRESHOLD_MINUTES = 5 // Use AssemblyAI for recordings ≥ 5 minutes
 
       if (audioUrl) {
-        // Get file info to check size
+        // Download file to check size and potentially use for Whisper
+        let fileData: Blob | null = null
         try {
-          const { data: fileData } = await dbSupabase.storage
+          const { data: downloadedFile, error: downloadError } = await dbSupabase.storage
             .from("lecture-recordings")
             .download(audioUrl)
           
-          if (fileData) {
-            fileSizeMB = fileData.size / (1024 * 1024)
-            // Estimate duration: ~1MB per minute for typical webm audio
-            estimatedDurationMinutes = fileSizeMB
+          if (downloadError) {
+            throw downloadError
           }
-        } catch {
-          console.log("⚠️ Could not determine file size, proceeding anyway")
+          
+          if (downloadedFile) {
+            fileData = downloadedFile
+            if (fileData) {
+              fileSizeMB = fileData.size / (1024 * 1024)
+              // Estimate duration: ~1MB per minute for typical webm audio
+              estimatedDurationMinutes = fileSizeMB
+            }
+          }
+        } catch (error) {
+          console.log("⚠️ Could not determine file size, proceeding anyway:", error)
           fileSizeMB = 0
           estimatedDurationMinutes = 0
         }
@@ -153,20 +163,16 @@ serve(async (req) => {
             throw new Error(`Failed to create signed URL: ${signedUrlError?.message || "No data"}`)
           }
 
-          publicAudioUrl = signedUrlData.signedUrl
-          console.log(`🔗 Created signed URL for AssemblyAI (valid for 1 hour)`)
+          useAssemblyAI = true
+          audioUrlForJob = audioUrl // Store for job creation
+          console.log(`🔗 Will use AssemblyAI for transcription (creating async job)`)
         } else {
           // Use Whisper for shorter recordings (< 5 minutes)
           console.log(`📊 Audio file size: ${fileSizeMB.toFixed(2)} MB (estimated ~${estimatedDurationMinutes.toFixed(1)} minutes)`)
           console.log(`🎤 Using Whisper for transcription (< ${DURATION_THRESHOLD_MINUTES} minutes - faster for short clips)...`)
 
-          // Download file for Whisper
-          const { data: fileData, error: downloadError } = await dbSupabase.storage
-            .from("lecture-recordings")
-            .download(audioUrl)
-
-          if (downloadError || !fileData) {
-            throw new Error(`Failed to download audio: ${downloadError?.message || "No data"}`)
+          if (!fileData) {
+            throw new Error("Failed to download audio file")
           }
 
           // Check Whisper's 25MB limit
@@ -177,7 +183,18 @@ serve(async (req) => {
             )
           }
 
-          const audioBlob = await fileData.blob()
+          // In Deno, download() should return a Blob directly
+          // Handle both Blob and Response types for compatibility
+          let audioBlob: Blob
+          if (fileData instanceof Blob) {
+            audioBlob = fileData
+          } else if (fileData && typeof (fileData as any).blob === 'function') {
+            // If it's a Response object, convert to Blob
+            audioBlob = await (fileData as any).blob()
+          } else {
+            throw new Error(`Unexpected file type: ${typeof fileData}. Expected Blob or Response.`)
+          }
+          
           const formData = new FormData()
           formData.append("file", audioBlob, "recording.webm")
           formData.append("model", "whisper-1")
@@ -266,102 +283,28 @@ serve(async (req) => {
         throw new Error("No audio source provided")
       }
 
-      // Use AssemblyAI for longer recordings (if we have a signed URL)
-      if (publicAudioUrl) {
-        console.log("🔄 Using AssemblyAI for transcription (handles large files automatically)...")
-        
-        if (!ASSEMBLYAI_API_KEY) {
-          throw new Error("ASSEMBLYAI_API_KEY not configured. Please add it to your environment variables.")
-        }
-
-        // Submit transcription job to AssemblyAI
-        const submitResponse = await fetch("https://api.assemblyai.com/v2/transcript", {
-          method: "POST",
-          headers: {
-            authorization: ASSEMBLYAI_API_KEY,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            audio_url: publicAudioUrl,
-            language_detection: true,
-            speech_models: ["universal-3-pro"], // Best quality for English
-            punctuate: true,
-            format_text: true,
-          }),
-        })
-
-        if (!submitResponse.ok) {
-          const errorText = await submitResponse.text()
-          console.error("❌ AssemblyAI submission error:", errorText)
-          throw new Error(`AssemblyAI submission failed: ${submitResponse.status} ${errorText}`)
-        }
-
-        const submitData = await submitResponse.json()
-        const transcriptId = submitData.id
-
-        if (!transcriptId) {
-          throw new Error("Failed to get transcript ID from AssemblyAI")
-        }
-
-        console.log(`📋 Transcription job submitted: ${transcriptId}`)
-
-        // Poll for completion (AssemblyAI processes quickly - usually 2-5 minutes)
-        let attempts = 0
-        const maxAttempts = 120 // 10 minutes max (poll every 5 seconds)
-        let isComplete = false
-
-        while (!isComplete && attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 5000)) // Wait 5 seconds
-
-          const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
-            headers: {
-              authorization: ASSEMBLYAI_API_KEY,
-            },
-          })
-
-          if (!statusResponse.ok) {
-            throw new Error(`Failed to check transcription status: ${statusResponse.status}`)
-          }
-
-          const statusData = await statusResponse.json()
-          const status = statusData.status
-
-          console.log(`📊 Transcription status: ${status} (attempt ${attempts + 1}/${maxAttempts})`)
-
-          if (status === "completed") {
-            transcript = statusData.text || ""
-            if (!transcript) {
-              throw new Error("Empty transcript received from AssemblyAI")
-            }
-            isComplete = true
-            console.log(`✅ Transcription complete: ${transcript.length} characters`)
-          } else if (status === "error") {
-            throw new Error(`AssemblyAI transcription failed: ${statusData.error || "Unknown error"}`)
-          }
-
-          attempts++
-        }
-
-        if (!isComplete) {
-          throw new Error("Transcription timed out. Please try again or check AssemblyAI dashboard.")
-        }
-      }
+      // For AssemblyAI: We'll create a job after saving the note
+      // Worker will handle transcription + note generation
+      // No transcription happens here - just mark that we need AssemblyAI
     }
 
-    // ALWAYS save transcript to database first
-    console.log("💾 Saving transcript to database...")
+    // ALWAYS save note to database first
+    // For AssemblyAI: Save with audio_url but empty transcript (worker will transcribe)
+    // For Whisper: Save with transcript (already transcribed)
+    console.log("💾 Saving note to database...")
 
     let savedNoteId = noteId
 
     if (noteId) {
       // Update existing note
       const updateData: Record<string, unknown> = {
-        original_content: transcript,
+        original_content: transcript || "", // Empty for AssemblyAI, transcript for Whisper
+        audio_url: audioUrlForJob || undefined, // Update audio URL if we have it
       }
 
       // Only add processing_status if column exists
       try {
-        updateData.processing_status = saveOnlyTranscript ? "pending" : "processing"
+        updateData.processing_status = saveOnlyTranscript ? "pending" : (useAssemblyAI ? "pending" : "processing")
         updateData.error_message = null
       } catch (e) {
         // Column doesn't exist yet
@@ -380,41 +323,44 @@ serve(async (req) => {
           const { error: fallbackError } = await dbSupabase
             .from("lecture_notes")
             .update({
-              original_content: transcript,
+              original_content: transcript || "",
+              audio_url: audioUrlForJob || undefined,
             })
             .eq("id", noteId)
             .eq("user_id", userId)
 
           if (fallbackError) {
-            console.error("❌ Error updating transcript:", fallbackError)
-            throw new Error("Failed to update transcript. Please run the database migration: LECTURE_NOTES_SCHEMA_UPDATE.sql")
+            console.error("❌ Error updating note:", fallbackError)
+            throw new Error("Failed to update note. Please run the database migration: LECTURE_NOTES_SCHEMA_UPDATE.sql")
           }
-          console.log("✅ Transcript updated in existing note (without processing_status - migration needed)")
+          console.log("✅ Note updated (without processing_status - migration needed)")
         } else {
-          console.error("❌ Error updating transcript:", updateError)
-          throw new Error(`Failed to update transcript: ${updateError.message}`)
+          console.error("❌ Error updating note:", updateError)
+          throw new Error(`Failed to update note: ${updateError.message}`)
         }
       } else {
-        console.log("✅ Transcript updated in existing note")
+        console.log("✅ Note updated")
       }
     } else {
-      // Create new note with transcript
-      // Try with processing_status first, fallback to without if column doesn't exist
+      // Create new note
+      // For AssemblyAI: transcript is empty, audio_url is set
+      // For Whisper: transcript is set, audio_url is null
       const insertData: any = {
         user_id: userId,
         title: "Lecture Recording (Processing...)",
-        summary: "Transcript saved. Generating notes...",
+        summary: useAssemblyAI ? "Processing audio... Generating notes..." : "Transcript saved. Generating notes...",
         sections: [],
         key_takeaways: [],
         definitions: [],
         source_type: "recorded",
-        original_content: transcript,
+        original_content: transcript || "", // Empty for AssemblyAI, transcript for Whisper
+        audio_url: audioUrlForJob || null, // Save audio URL for worker
       }
 
       // Only add processing_status if column exists (will be added via migration)
       // If migration hasn't been run, this will fail and we'll retry without it
       try {
-        insertData.processing_status = saveOnlyTranscript ? "pending" : "processing"
+        insertData.processing_status = saveOnlyTranscript ? "pending" : (useAssemblyAI ? "pending" : "processing")
       } catch (e) {
         // Column doesn't exist yet - will be added by migration
       }
@@ -434,12 +380,13 @@ serve(async (req) => {
             .insert({
               user_id: userId,
               title: "Lecture Recording (Processing...)",
-              summary: "Transcript saved. Generating notes...",
+              summary: useAssemblyAI ? "Processing audio... Generating notes..." : "Transcript saved. Generating notes...",
               sections: [],
               key_takeaways: [],
               definitions: [],
               source_type: "recorded",
-              original_content: transcript,
+              original_content: transcript || "",
+              audio_url: audioUrlForJob || null,
             })
             .select()
             .single()
@@ -481,8 +428,56 @@ serve(async (req) => {
       )
     }
 
-    // Generate organized notes from transcript
-    console.log("📝 Generating organized notes...")
+    // For AssemblyAI (long recordings): Create async job instead of processing synchronously
+    if (useAssemblyAI && audioUrlForJob && savedNoteId) {
+      console.log("📋 Creating async processing job for AssemblyAI transcription...")
+      
+      // Create job in lecture_processing_jobs table
+      const { data: newJob, error: jobError } = await dbSupabase
+        .from("lecture_processing_jobs")
+        .insert({
+          user_id: userId,
+          note_id: savedNoteId,
+          status: "pending",
+          progress: 0,
+          audio_url: audioUrlForJob, // Store audio URL for worker
+        })
+        .select("id")
+        .single()
+
+      if (jobError || !newJob) {
+        console.error("❌ Error creating job:", jobError)
+        // Fall back to synchronous processing if job creation fails
+        console.log("⚠️ Falling back to synchronous processing...")
+      } else {
+        console.log(`✅ Job created: ${newJob.id}`)
+        
+        // Return jobId immediately - worker will handle everything
+        return new Response(
+          JSON.stringify({
+            jobId: newJob.id,
+            noteId: savedNoteId,
+            status: "pending",
+            message: "Processing started. Your notes will be ready shortly.",
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          }
+        )
+      }
+    }
+
+    // For Whisper (short recordings): Process synchronously (fast enough)
+    // Or fallback if job creation failed
+    if (!transcript) {
+      throw new Error("No transcript available for note generation")
+    }
+
+    console.log("📝 Generating organized notes synchronously (Whisper/short recording)...")
     
     // Check transcript length - if too long, chunk it for parallel processing
     const transcriptTokens = Math.ceil(transcript.length / 4) // Rough estimate: 1 token ≈ 4 characters
