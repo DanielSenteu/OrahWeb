@@ -142,6 +142,7 @@ export async function POST(request: NextRequest) {
       console.log(`🔄 Using existing pending job: ${jobId}`)
     } else {
       // Create new job
+      // Note: audio_url is stored in lecture_notes table, worker will fetch it from there
       const { data: newJob, error: jobError } = await supabase
         .from('lecture_processing_jobs')
         .insert({
@@ -149,7 +150,6 @@ export async function POST(request: NextRequest) {
           note_id: noteId,
           status: 'pending',
           progress: 0,
-          audio_url: audioUrl || null, // Use the found audioUrl (from note or Storage)
         })
         .select('id')
         .single()

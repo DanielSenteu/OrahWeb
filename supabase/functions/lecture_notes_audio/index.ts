@@ -433,6 +433,7 @@ serve(async (req) => {
       console.log("📋 Creating async processing job for AssemblyAI transcription...")
       
       // Create job in lecture_processing_jobs table
+      // Note: audio_url is stored in lecture_notes table, worker will fetch it from there
       const { data: newJob, error: jobError } = await dbSupabase
         .from("lecture_processing_jobs")
         .insert({
@@ -440,7 +441,6 @@ serve(async (req) => {
           note_id: savedNoteId,
           status: "pending",
           progress: 0,
-          audio_url: audioUrlForJob, // Store audio URL for worker
         })
         .select("id")
         .single()
