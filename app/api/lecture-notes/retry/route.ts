@@ -179,17 +179,52 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 Retrying note generation (attempt ${retryCount}) for note: ${noteId}, job: ${jobId}`)
 
     // Call worker directly with jobId (authHeader already retrieved above)
-    const res = await fetch(WORKER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-      },
-      body: JSON.stringify({ jobId }),
-    })
+    console.log(`📡 Calling worker Edge Function: ${WORKER_URL}`)
+    console.log(`📤 Sending jobId to worker: ${jobId}`)
+    
+    let res: Response
+    let data: any
+    
+    try {
+      res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authHeader,
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+        },
+        body: JSON.stringify({ jobId }),
+      })
 
-    const data = await res.json()
+      console.log(`📥 Worker response status: ${res.status} ${res.statusText}`)
+      data = await res.json()
+      console.log(`📥 Worker response data:`, data)
+    } catch (fetchError: any) {
+      console.error('❌ Error calling worker Edge Function:', fetchError)
+      console.error('Error details:', {
+        message: fetchError.message,
+        stack: fetchError.stack,
+        url: WORKER_URL,
+      })
+      
+      // Update status to failed
+      await supabase
+        .from('lecture_notes')
+        .update({
+          processing_status: 'failed',
+          error_message: `Failed to call worker: ${fetchError.message}`,
+        })
+        .eq('id', noteId)
+      
+      return NextResponse.json(
+        { 
+          error: 'Failed to call worker Edge Function', 
+          details: fetchError.message,
+          url: WORKER_URL 
+        },
+        { status: 500 }
+      )
+    }
 
     if (!res.ok) {
       // Update status to failed
