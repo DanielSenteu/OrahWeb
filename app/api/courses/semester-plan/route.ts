@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     // Verify course exists and belongs to user
     const { data: course, error: courseError } = await supabase
       .from('courses')
-      .select('id, course_name, semester, year')
+      .select('id, course_name, semester, year, syllabus_text')
       .eq('id', courseId)
       .eq('user_id', userId)
       .single()
@@ -143,20 +143,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // Extract lectures, assignments, and exams from syllabus
-    // This will be called automatically when syllabus is uploaded
-    // For now, we'll trigger it in the background after plan creation
-    if (course.syllabus_text) {
-      // Trigger extraction asynchronously (don't block the response)
-      setImmediate(async () => {
-        try {
-          const extractModule = await import('../extract-syllabus-items/route')
-          // The extraction will happen when the user views the tabs
-        } catch (err) {
-          console.error('Extraction module error:', err)
-        }
-      })
-    }
+    // Note: Syllabus extraction happens automatically when syllabus is uploaded
+    // The extraction API is called from the syllabus upload page
 
     return NextResponse.json({ 
       success: true, 
