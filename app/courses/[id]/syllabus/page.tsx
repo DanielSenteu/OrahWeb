@@ -231,7 +231,8 @@ export default function SyllabusUploadPage() {
       }
 
       toast.success('Syllabus uploaded and processed successfully!')
-      router.push(`/courses/${courseId}`)
+      // Redirect to semester plan setup
+      router.push(`/courses/${courseId}/semester-plan`)
     } catch (error: any) {
       console.error('Error processing syllabus:', error)
       toast.error(error.message || 'Failed to process syllabus')
