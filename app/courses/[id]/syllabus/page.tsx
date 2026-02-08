@@ -231,6 +231,28 @@ export default function SyllabusUploadPage() {
       }
 
       toast.success('Syllabus uploaded and processed successfully!')
+      
+      // Extract lectures, assignments, and exams from syllabus
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          await fetch('/api/courses/extract-syllabus-items', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              courseId,
+              syllabusText: combinedText,
+            }),
+          })
+        }
+      } catch (extractError) {
+        console.error('Error extracting syllabus items:', extractError)
+        // Non-fatal, continue with redirect
+      }
+      
       // Redirect to semester plan setup
       router.push(`/courses/${courseId}/semester-plan`)
     } catch (error: any) {

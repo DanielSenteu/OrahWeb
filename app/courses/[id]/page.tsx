@@ -498,34 +498,67 @@ export default function CourseDashboardPage() {
                   <p>Loading...</p>
                 </div>
               ) : lectures.length > 0 ? (
-                <div className="lectures-list">
-                  {lectures.map((lecture) => (
-                    <div key={lecture.id} className="lecture-card">
-                      <div className="lecture-header">
-                        <h3>{lecture.title || `Lecture ${lecture.week_number ? `Week ${lecture.week_number}` : ''}`}</h3>
-                        {lecture.lecture_date && (
-                          <span className="lecture-date">
-                            {new Date(lecture.lecture_date).toLocaleDateString()}
-                          </span>
-                        )}
+                <>
+                  <div className="lectures-list">
+                    {lectures.map((lecture) => (
+                      <div key={lecture.id} className="lecture-card">
+                        <div className="lecture-header">
+                          <div>
+                            <h3>{lecture.title || `Lecture ${lecture.week_number ? `Week ${lecture.week_number}` : ''}`}</h3>
+                            {lecture.lecture_date && (
+                              <p className="lecture-date">
+                                📅 {new Date(lecture.lecture_date).toLocaleDateString('en-US', { 
+                                  weekday: 'long', 
+                                  year: 'numeric', 
+                                  month: 'long', 
+                                  day: 'numeric' 
+                                })}
+                              </p>
+                            )}
+                            {lecture.week_number && (
+                              <p className="lecture-week">Week {lecture.week_number}</p>
+                            )}
+                          </div>
+                          <div className="lecture-status-badge">
+                            {lecture.processing_status === 'completed' && lecture.generated_notes && (
+                              <span className="status-completed">✅ Notes Ready</span>
+                            )}
+                            {lecture.processing_status === 'processing' && (
+                              <span className="status-processing">⏳ Processing...</span>
+                            )}
+                            {lecture.processing_status === 'pending' && !lecture.audio_url && (
+                              <span className="status-pending">⏸️ Not Recorded</span>
+                            )}
+                            {lecture.processing_status === 'pending' && lecture.audio_url && (
+                              <span className="status-pending">⏸️ Pending</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="lecture-actions">
+                          <Link 
+                            href={`/lecture-notes?courseId=${courseId}&lectureId=${lecture.id}`}
+                            className="btn-lecture-action"
+                          >
+                            {lecture.audio_url ? 'View/Edit Notes' : 'Record Lecture'}
+                          </Link>
+                        </div>
                       </div>
-                      {lecture.processing_status === 'completed' && lecture.generated_notes && (
-                        <p className="lecture-status">✅ Notes generated</p>
-                      )}
-                      {lecture.processing_status === 'processing' && (
-                        <p className="lecture-status">⏳ Processing...</p>
-                      )}
-                      {lecture.processing_status === 'pending' && (
-                        <p className="lecture-status">⏸️ Pending</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  <div className="section-footer">
+                    <Link 
+                      href={`/lecture-notes?courseId=${courseId}`}
+                      className="btn-primary"
+                    >
+                      Record New Lecture
+                    </Link>
+                  </div>
+                </>
               ) : (
                 <div className="tab-empty">
                   <div className="tab-empty-icon">🎙️</div>
                   <h3>No Lectures Yet</h3>
-                  <p>Start recording your lectures to generate organized notes automatically.</p>
+                  <p>Lectures will appear here once extracted from your syllabus, or you can record them manually.</p>
                   <Link 
                     href={`/lecture-notes?courseId=${courseId}`}
                     className="btn-primary"
@@ -541,9 +574,12 @@ export default function CourseDashboardPage() {
             <div className="tab-panel">
               <div className="tab-panel-header">
                 <h2 className="tab-panel-title">Assignments</h2>
-                <button className="btn-primary-small">
+                <Link 
+                  href={`/assignment-helper?courseId=${courseId}`}
+                  className="btn-primary-small"
+                >
                   Add Assignment
-                </button>
+                </Link>
               </div>
               
               {dataLoading ? (
@@ -552,34 +588,62 @@ export default function CourseDashboardPage() {
                   <p>Loading...</p>
                 </div>
               ) : assignments.length > 0 ? (
-                <div className="assignments-list">
-                  {assignments.map((assignment) => (
-                    <div key={assignment.id} className="assignment-card">
-                      <div className="assignment-header">
-                        <h3>{assignment.assignment_name}</h3>
-                        <span className={`assignment-status ${assignment.status}`}>
-                          {assignment.status}
-                        </span>
+                <>
+                  <div className="assignments-list">
+                    {assignments.map((assignment) => (
+                      <div key={assignment.id} className="assignment-card">
+                        <div className="assignment-header">
+                          <div>
+                            <h3>{assignment.assignment_name}</h3>
+                            {assignment.due_date && (
+                              <p className="assignment-due">
+                                📅 Due: {new Date(assignment.due_date).toLocaleDateString('en-US', { 
+                                  weekday: 'long', 
+                                  year: 'numeric', 
+                                  month: 'long', 
+                                  day: 'numeric' 
+                                })}
+                              </p>
+                            )}
+                            {assignment.description && (
+                              <p className="assignment-description">{assignment.description}</p>
+                            )}
+                          </div>
+                          <span className={`assignment-status ${assignment.status}`}>
+                            {assignment.status?.replace('_', ' ') || 'not started'}
+                          </span>
+                        </div>
+                        <div className="assignment-actions">
+                          <Link 
+                            href={`/assignment-helper?courseId=${courseId}&assignmentId=${assignment.id}`}
+                            className="btn-assignment-action"
+                          >
+                            {assignment.step_by_step_plan ? 'View Plan' : 'Create Plan'}
+                          </Link>
+                        </div>
                       </div>
-                      {assignment.due_date && (
-                        <p className="assignment-due">
-                          Due: {new Date(assignment.due_date).toLocaleDateString()}
-                        </p>
-                      )}
-                      {assignment.description && (
-                        <p className="assignment-description">{assignment.description}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  <div className="section-footer">
+                    <Link 
+                      href={`/assignment-helper?courseId=${courseId}`}
+                      className="btn-primary"
+                    >
+                      Add New Assignment
+                    </Link>
+                  </div>
+                </>
               ) : (
                 <div className="tab-empty">
                   <div className="tab-empty-icon">📝</div>
                   <h3>No Assignments Yet</h3>
-                  <p>Add assignments to get step-by-step completion plans.</p>
-                  <button className="btn-primary">
+                  <p>Assignments will appear here once extracted from your syllabus, or you can add them manually.</p>
+                  <Link 
+                    href={`/assignment-helper?courseId=${courseId}`}
+                    className="btn-primary"
+                  >
                     Add Your First Assignment
-                  </button>
+                  </Link>
                 </div>
               )}
             </div>
@@ -589,9 +653,12 @@ export default function CourseDashboardPage() {
             <div className="tab-panel">
               <div className="tab-panel-header">
                 <h2 className="tab-panel-title">Exams</h2>
-                <button className="btn-primary-small">
+                <Link 
+                  href={`/exam-prep?courseId=${courseId}`}
+                  className="btn-primary-small"
+                >
                   Add Exam
-                </button>
+                </Link>
               </div>
               
               {dataLoading ? (
@@ -600,36 +667,64 @@ export default function CourseDashboardPage() {
                   <p>Loading...</p>
                 </div>
               ) : exams.length > 0 ? (
-                <div className="exams-list">
-                  {exams.map((exam) => (
-                    <div key={exam.id} className="exam-card">
-                      <div className="exam-header">
-                        <h3>{exam.exam_name}</h3>
-                        <span className={`exam-status ${exam.status}`}>
-                          {exam.status}
-                        </span>
-                      </div>
-                      {exam.exam_date && (
-                        <p className="exam-date">
-                          Date: {new Date(exam.exam_date).toLocaleDateString()}
-                        </p>
-                      )}
-                      {exam.topics && exam.topics.length > 0 && (
-                        <div className="exam-topics">
-                          <strong>Topics:</strong> {exam.topics.join(', ')}
+                <>
+                  <div className="exams-list">
+                    {exams.map((exam) => (
+                      <div key={exam.id} className="exam-card">
+                        <div className="exam-header">
+                          <div>
+                            <h3>{exam.exam_name}</h3>
+                            {exam.exam_date && (
+                              <p className="exam-date">
+                                📅 Date: {new Date(exam.exam_date).toLocaleDateString('en-US', { 
+                                  weekday: 'long', 
+                                  year: 'numeric', 
+                                  month: 'long', 
+                                  day: 'numeric' 
+                                })}
+                              </p>
+                            )}
+                            {exam.topics && exam.topics.length > 0 && (
+                              <div className="exam-topics">
+                                <strong>Topics:</strong> {exam.topics.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                          <span className={`exam-status ${exam.status}`}>
+                            {exam.status?.replace('_', ' ') || 'not started'}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        <div className="exam-actions">
+                          <Link 
+                            href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`}
+                            className="btn-exam-action"
+                          >
+                            {exam.study_plan ? 'View Study Plan' : 'Create Study Plan'}
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="section-footer">
+                    <Link 
+                      href={`/exam-prep?courseId=${courseId}`}
+                      className="btn-primary"
+                    >
+                      Add New Exam
+                    </Link>
+                  </div>
+                </>
               ) : (
                 <div className="tab-empty">
                   <div className="tab-empty-icon">📚</div>
                   <h3>No Exams Yet</h3>
-                  <p>Add exams to get personalized study plans with spaced repetition.</p>
-                  <button className="btn-primary">
+                  <p>Exams will appear here once extracted from your syllabus, or you can add them manually.</p>
+                  <Link 
+                    href={`/exam-prep?courseId=${courseId}`}
+                    className="btn-primary"
+                  >
                     Add Your First Exam
-                  </button>
+                  </Link>
                 </div>
               )}
             </div>

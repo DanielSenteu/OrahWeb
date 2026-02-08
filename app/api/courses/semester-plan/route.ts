@@ -143,6 +143,21 @@ export async function POST(req: Request) {
       }
     }
 
+    // Extract lectures, assignments, and exams from syllabus
+    // This will be called automatically when syllabus is uploaded
+    // For now, we'll trigger it in the background after plan creation
+    if (course.syllabus_text) {
+      // Trigger extraction asynchronously (don't block the response)
+      setImmediate(async () => {
+        try {
+          const extractModule = await import('../extract-syllabus-items/route')
+          // The extraction will happen when the user views the tabs
+        } catch (err) {
+          console.error('Extraction module error:', err)
+        }
+      })
+    }
+
     return NextResponse.json({ 
       success: true, 
       courseId,
