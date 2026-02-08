@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Navigation from '@/components/layout/Navigation'
 import '@/app/styles/academic-form.css'
-import '../assistant/assistant-chat.css'
+import '@/app/assistant/assistant-chat.css'
 import './semester-plan.css'
 
 type Message = {
