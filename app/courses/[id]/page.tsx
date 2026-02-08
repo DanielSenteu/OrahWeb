@@ -34,6 +34,10 @@ export default function CourseDashboardPage() {
   const [assignments, setAssignments] = useState<any[]>([])
   const [exams, setExams] = useState<any[]>([])
   const [dataLoading, setDataLoading] = useState(false)
+  
+  // Day navigation for Overview tab
+  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [dailyTasks, setDailyTasks] = useState<any[]>([])
 
   useEffect(() => {
     if (courseId) {
@@ -78,6 +82,12 @@ export default function CourseDashboardPage() {
       loadTabData(courseId, activeTab)
     }
   }, [activeTab, courseId])
+
+  useEffect(() => {
+    if (activeTab === 'overview' && semesterPlan?.plan_data?.tasks) {
+      filterTasksForDate(selectedDate)
+    }
+  }, [selectedDate, semesterPlan, activeTab])
 
   const loadTabData = async (id: string, tab: Tab) => {
     setDataLoading(true)
@@ -147,6 +157,81 @@ export default function CourseDashboardPage() {
       return `${course.semester} ${course.year}`
     }
     return 'No semester set'
+  }
+
+  // Format date as YYYY-MM-DD
+  const formatDateKey = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  // Filter tasks for selected date
+  const filterTasksForDate = (date: Date) => {
+    if (!semesterPlan?.plan_data?.tasks) {
+      setDailyTasks([])
+      return
+    }
+
+    const dateKey = formatDateKey(date)
+    const tasks = semesterPlan.plan_data.tasks.filter(
+      (task: any) => task.scheduled_date_key === dateKey
+    )
+    setDailyTasks(tasks || [])
+  }
+
+  // Navigate between days
+  const navigateDate = (direction: 'prev' | 'next') => {
+    const newDate = new Date(selectedDate)
+    newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1))
+    setSelectedDate(newDate)
+  }
+
+  // Format display date
+  const formatDisplayDate = (date: Date) => {
+    const today = new Date()
+    const isToday = date.toDateString() === today.toDateString()
+    
+    if (isToday) {
+      return {
+        label: 'Today',
+        value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      }
+    }
+    
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const isTomorrow = date.toDateString() === tomorrow.toDateString()
+    
+    if (isTomorrow) {
+      return {
+        label: 'Tomorrow',
+        value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      }
+    }
+    
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const isYesterday = date.toDateString() === yesterday.toDateString()
+    
+    if (isYesterday) {
+      return {
+        label: 'Yesterday',
+        value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      }
+    }
+    
+    return {
+      label: date.toLocaleDateString('en-US', { weekday: 'long' }),
+      value: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+  }
+
+  const calculateProgress = () => {
+    if (dailyTasks.length === 0) return 0
+    const completed = dailyTasks.filter((t: any) => t.is_completed).length
+    return Math.round((completed / dailyTasks.length) * 100)
   }
 
   if (loading) {
@@ -264,6 +349,7 @@ export default function CourseDashboardPage() {
                 </div>
               ) : semesterPlan ? (
                 <div className="overview-content">
+                  {/* Semester Plan Stats */}
                   <div className="overview-card">
                     <h3 className="overview-card-title">Semester Plan</h3>
                     <div className="overview-stats">
@@ -278,13 +364,105 @@ export default function CourseDashboardPage() {
                         </div>
                       </div>
                     </div>
-                    {semesterPlan.plan_data?.tasks && semesterPlan.plan_data.tasks.length > 0 && (
-                      <div className="overview-tasks">
-                        <h4>Daily Tasks</h4>
-                        <p>You have {semesterPlan.plan_data.tasks.length} tasks scheduled across your semester plan.</p>
-                      </div>
-                    )}
                   </div>
+
+                  {/* Daily Tasks with Day Navigation */}
+                  {semesterPlan.plan_data?.tasks && semesterPlan.plan_data.tasks.length > 0 && (
+                    <div className="daily-tasks-section">
+                      {/* Date Navigation */}
+                      <div className="date-nav">
+                        <button className="date-nav-btn" onClick={() => navigateDate('prev')}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="15 18 9 12 15 6"/>
+                          </svg>
+                          Previous
+                        </button>
+
+                        <div className="current-date">
+                          <div className="date-label">{formatDisplayDate(selectedDate).label}</div>
+                          <div className="date-value">{formatDisplayDate(selectedDate).value}</div>
+                        </div>
+
+                        <button className="date-nav-btn" onClick={() => navigateDate('next')}>
+                          Next
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                          </svg>
+                        </button>
+                      </div>
+
+                      {/* Tasks List */}
+                      {dailyTasks.length === 0 ? (
+                        <div className="tab-empty">
+                          <div className="tab-empty-icon">📅</div>
+                          <h3>No Tasks Scheduled</h3>
+                          <p>No tasks are scheduled for this day.</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="tasks-list">
+                            {dailyTasks.map((task: any, index: number) => (
+                              <div 
+                                key={task.id || index} 
+                                className="task-card"
+                              >
+                                <div className="task-header">
+                                  <div className="task-icon">
+                                    <svg viewBox="0 0 24 24" fill="none">
+                                      <polyline points="16 18 22 12 16 6"/>
+                                      <polyline points="8 6 2 12 8 18"/>
+                                    </svg>
+                                  </div>
+                                  <div className="task-info">
+                                    <h2 className="task-title">{task.title}</h2>
+                                    {task.notes && (
+                                      <p className="task-description">{task.notes}</p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="task-meta-row">
+                                  <div className="task-meta-item">
+                                    <svg viewBox="0 0 24 24" fill="none">
+                                      <circle cx="12" cy="12" r="10"/>
+                                      <polyline points="12 6 12 12 16 14"/>
+                                    </svg>
+                                    <span><span className="task-meta-value">{task.estimated_minutes || 0} min</span></span>
+                                  </div>
+                                  {task.day_number && (
+                                    <div className="task-meta-item">
+                                      <span className="day-badge">📅 Day {task.day_number}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div className="progress-section">
+                            <div className="progress-container">
+                              <div className="progress-label-section">
+                                <div className="progress-label">Today&apos;s Progress</div>
+                                <div className="progress-value">{calculateProgress()}%</div>
+                              </div>
+                              <div className="progress-bar-wrapper">
+                                <div className="progress-bar">
+                                  <div 
+                                    className="progress-fill" 
+                                    style={{ 
+                                      width: `${calculateProgress()}%`,
+                                      transition: 'width 1s cubic-bezier(0.16, 1, 0.3, 1)'
+                                    }}
+                                  ></div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="tab-empty">
