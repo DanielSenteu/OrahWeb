@@ -69,8 +69,8 @@ export default function NewCoursePage() {
 
       toast.success('Course created successfully!')
       
-      // Redirect to course dashboard
-      router.push(`/courses/${data.id}`)
+      // Redirect to syllabus upload page
+      router.push(`/courses/${data.id}/syllabus`)
     } catch (error: any) {
       console.error('Error creating course:', error)
       toast.error('Failed to create course. Please try again.')
