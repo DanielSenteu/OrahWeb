@@ -413,11 +413,63 @@ serve(async (req) => {
 
     console.log(`📄 Combined ${documents.length} document summaries with study materials (${allNotes.length} chars)`)
 
-    // Extract topics from combined notes
+    // If combined notes are still too large, summarize them one more time
+    const MAX_COMBINED_CHARS = 60000 // ~15k tokens (safe for GPT-4o with prompt overhead)
+    let finalNotes = allNotes
+    
+    if (allNotes.length > MAX_COMBINED_CHARS) {
+      console.log(`📝 Combined notes too large (${allNotes.length} chars), summarizing further...`)
+      try {
+        const finalSummaryPrompt = `Create a comprehensive but concise summary of these study materials for exam preparation. Preserve ALL key topics, concepts, definitions, formulas, and examples. Focus on exam-relevant information.
+
+Study Materials:
+${allNotes}
+
+Return a summary that:
+- Preserves all major topics and concepts
+- Keeps important definitions and formulas
+- Maintains key examples and problem-solving strategies
+- Is optimized for exam preparation
+- Should be approximately 20-30% of the original length
+
+Summary:`
+
+        const finalSummaryResponse = await fetch(OPENAI_URL, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: "You create comprehensive summaries of study materials that preserve all key information for exam preparation." },
+              { role: "user", content: finalSummaryPrompt }
+            ],
+            temperature: 0.3,
+            max_tokens: Math.min(8000, Math.ceil(allNotes.length * 0.25 * 0.3)), // ~30% of combined summaries
+          })
+        })
+
+        if (finalSummaryResponse.ok) {
+          const finalSummaryData = await finalSummaryResponse.json()
+          finalNotes = finalSummaryData.choices?.[0]?.message?.content || allNotes.substring(0, MAX_COMBINED_CHARS)
+          console.log(`✅ Final summary created: ${allNotes.length} → ${finalNotes.length} chars (${Math.round((1 - finalNotes.length/allNotes.length) * 100)}% reduction)`)
+        } else {
+          console.warn("⚠️ Final summarization failed, using truncated version")
+          finalNotes = allNotes.substring(0, MAX_COMBINED_CHARS) + "\n\n[... additional content truncated ...]"
+        }
+      } catch (error) {
+        console.warn("⚠️ Final summarization error:", error)
+        finalNotes = allNotes.substring(0, MAX_COMBINED_CHARS) + "\n\n[... additional content truncated ...]"
+      }
+    }
+
+    // Extract topics from final notes
     let extractedTopics: string[] = []
-    if (allNotes && allNotes.length > 100) {
+    if (finalNotes && finalNotes.length > 100) {
       console.log("🔍 Extracting topics from study materials...")
-      extractedTopics = await extractTopics(allNotes)
+      extractedTopics = await extractTopics(finalNotes)
       console.log(`✅ Extracted ${extractedTopics.length} topics:`, extractedTopics)
     }
 
@@ -497,7 +549,7 @@ EXAM INFO:
 ${topicsSection}
 
 STUDY MATERIALS PROVIDED BY STUDENT:
-${allNotes || 'No study materials provided'}
+${finalNotes || 'No study materials provided'}
 
 NOTE: The above materials include summaries of uploaded documents. Full documents are stored separately for detailed reference during quiz generation.
 

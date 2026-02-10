@@ -256,8 +256,36 @@ export default function QuizPage() {
         <Navigation />
         <div className="quiz-error">
           <h2>No questions available</h2>
-          <button onClick={() => router.back()} className="btn-back">
-            Go Back
+          <button 
+            onClick={() => {
+              // Try to go back to the task work page if we came from there
+              const referrer = document.referrer
+              if (referrer.includes('/tasks/') && referrer.includes('/work')) {
+                router.push(referrer)
+              } else {
+                router.back()
+              }
+            }} 
+            className="btn-back"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.75rem 1.5rem',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '0.9375rem',
+              fontWeight: 500,
+              transition: 'all 0.2s'
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '18px', height: '18px' }}>
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            Back
           </button>
         </div>
       </>

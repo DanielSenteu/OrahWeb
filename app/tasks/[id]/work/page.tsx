@@ -178,6 +178,7 @@ export default function TaskWorkSessionPage() {
           .single()
 
         if (goalData?.goal_type === 'exam' && goalData.exam_id) {
+          console.log('✅ Exam task detected:', { examId: goalData.exam_id, goalType: goalData.goal_type })
           setIsExamTask(true)
           setExamId(goalData.exam_id)
           setLoadingExamData(true)
@@ -196,6 +197,7 @@ export default function TaskWorkSessionPage() {
             const topic = topicMatch ? topicMatch[1].trim() : examData.topics?.[0] || null
 
             if (topic) {
+              console.log('✅ Exam topic set:', topic)
               setExamTopic(topic)
 
               // Get documents for this exam
@@ -743,6 +745,188 @@ export default function TaskWorkSessionPage() {
 
         {/* Main Content */}
         <div className="work-content">
+          {/* For Exam Tasks: Show Exam Notes Prominently */}
+          {isExamTask && examTopic ? (
+            <div style={{ width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
+              {/* Exam Notes Section - Full Width */}
+              <div className="exam-notes-card" style={{ marginBottom: '2rem' }}>
+                <div className="exam-notes-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3>Study Notes: {examTopic}</h3>
+                  <button
+                    onClick={() => router.push(`/tasks/${taskId}`)}
+                    className="back-btn-small"
+                    style={{ margin: 0 }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                    Back
+                  </button>
+                </div>
+                {loadingExamData ? (
+                  <div className="exam-notes-loading">
+                    <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
+                    <p>Loading notes...</p>
+                  </div>
+                ) : generatingNotes ? (
+                  <div className="exam-notes-loading">
+                    <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
+                    <p>Generating structured notes...</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="exam-notes-content">
+                      <div className="exam-notes-text">
+                        {structuredNotes ? (
+                          <div style={{ 
+                            lineHeight: '1.6',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.9375rem',
+                            padding: '1.5rem',
+                            background: 'var(--bg-secondary)',
+                            borderRadius: '8px',
+                          }}>
+                            <h4 style={{ 
+                              color: 'var(--text-primary)', 
+                              marginTop: 0, 
+                              marginBottom: '1rem',
+                              fontSize: '1.25rem',
+                              fontWeight: 600
+                            }}>
+                              {structuredNotes.title || `Study Notes: ${examTopic}`}
+                            </h4>
+                            
+                            {structuredNotes.summary && (
+                              <div style={{ 
+                                marginBottom: '1.5rem',
+                                padding: '1rem',
+                                background: 'rgba(6, 182, 212, 0.1)',
+                                borderRadius: '6px',
+                                borderLeft: '3px solid var(--primary-cyan)'
+                              }}>
+                                <strong>Overview:</strong> {structuredNotes.summary}
+                              </div>
+                            )}
+
+                            {structuredNotes.sections && structuredNotes.sections.map((section: any, idx: number) => (
+                              <div key={idx} style={{ marginBottom: '1.5rem' }}>
+                                <h5 style={{ 
+                                  color: 'var(--text-primary)', 
+                                  marginBottom: '0.75rem',
+                                  fontSize: '1.125rem',
+                                  fontWeight: 600
+                                }}>
+                                  {section.title}
+                                </h5>
+                                <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                                  {section.content && section.content.map((point: string, pIdx: number) => (
+                                    <li key={pIdx} style={{ marginBottom: '0.5rem', lineHeight: '1.6' }}>
+                                      {point}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+
+                            {structuredNotes.definitions && structuredNotes.definitions.length > 0 && (
+                              <div style={{ marginTop: '2rem' }}>
+                                <h5 style={{ 
+                                  color: 'var(--text-primary)', 
+                                  marginBottom: '1rem',
+                                  fontSize: '1.125rem',
+                                  fontWeight: 600
+                                }}>
+                                  Key Definitions
+                                </h5>
+                                {structuredNotes.definitions.map((def: any, idx: number) => (
+                                  <div key={idx} style={{ 
+                                    marginBottom: '1rem',
+                                    padding: '0.75rem',
+                                    background: 'rgba(139, 92, 246, 0.1)',
+                                    borderRadius: '6px'
+                                  }}>
+                                    <strong>{def.term}:</strong> {def.definition}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {structuredNotes.keyTakeaways && structuredNotes.keyTakeaways.length > 0 && (
+                              <div style={{ marginTop: '2rem' }}>
+                                <h5 style={{ 
+                                  color: 'var(--text-primary)', 
+                                  marginBottom: '1rem',
+                                  fontSize: '1.125rem',
+                                  fontWeight: 600
+                                }}>
+                                  Key Takeaways
+                                </h5>
+                                <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                                  {structuredNotes.keyTakeaways.map((takeaway: string, idx: number) => (
+                                    <li key={idx} style={{ marginBottom: '0.5rem' }}>
+                                      {takeaway}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ) : examNotes ? (
+                          <div style={{ 
+                            lineHeight: '1.6',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.9375rem',
+                            padding: '1.5rem',
+                            background: 'var(--bg-secondary)',
+                            borderRadius: '8px',
+                            whiteSpace: 'pre-wrap'
+                          }}>
+                            {examNotes}
+                          </div>
+                        ) : (
+                          <p style={{ 
+                            color: 'var(--text-secondary)',
+                            padding: '1.5rem',
+                            textAlign: 'center'
+                          }}>
+                            No notes available for this topic yet.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {examId && examTopic && (
+                      <div className="exam-notes-actions" style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+                        <a
+                          href={`/exam/quiz/${examId}/${encodeURIComponent(examTopic)}`}
+                          className="btn-quiz"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '1rem 2rem',
+                            fontSize: '1rem',
+                            fontWeight: 600,
+                            background: 'var(--primary-purple)',
+                            color: 'white',
+                            borderRadius: '8px',
+                            textDecoration: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '20px', height: '20px' }}>
+                            <path d="M9 11l3 3L22 4"/>
+                            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+                          </svg>
+                          Start Quiz (10 questions)
+                        </a>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
           {/* Left Column - Timer & Checkpoints */}
           <div className="work-left">
             {/* Timer Card */}
@@ -1070,6 +1254,8 @@ export default function TaskWorkSessionPage() {
             </div>
             )}
           </div>
+            </>
+          )}
         </div>
       </div>
 
