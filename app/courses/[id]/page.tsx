@@ -153,19 +153,33 @@ export default function CourseDashboardPage() {
             // Also check if goal summary contains exam name (fallback for old goals or if exam_id not set)
             let goalDataFallback = null
             if (!goalData) {
-              const { data: fallbackGoal, error: fallbackError } = await supabase
+              // Try exact match first
+              const { data: exactMatch } = await supabase
                 .from('user_goals')
                 .select('id')
                 .eq('user_id', user.id)
-                .ilike('summary', `%${exam.exam_name}%`)
+                .ilike('summary', `Exam: ${exam.exam_name}`)
                 .maybeSingle()
               
-              console.log(`  Goal by summary:`, fallbackGoal, fallbackError)
-              goalDataFallback = fallbackGoal
+              if (exactMatch) {
+                goalDataFallback = exactMatch
+                console.log(`  Goal by exact summary match:`, exactMatch)
+              } else {
+                // Try partial match
+                const { data: partialMatch } = await supabase
+                  .from('user_goals')
+                  .select('id')
+                  .eq('user_id', user.id)
+                  .ilike('summary', `%${exam.exam_name}%`)
+                  .maybeSingle()
+                
+                console.log(`  Goal by partial summary match:`, partialMatch)
+                goalDataFallback = partialMatch
+              }
             }
             
             const finalGoalData = goalData || goalDataFallback
-            console.log(`  Final goal data:`, finalGoalData)
+            console.log(`  ✅ Final goal data for ${exam.exam_name}:`, finalGoalData, `hasPlan: ${!!finalGoalData}`)
             
             // If goal exists, get the first task
             let firstTaskId = null
@@ -184,9 +198,12 @@ export default function CourseDashboardPage() {
               }
             }
             
+            const hasPlan = !!finalGoalData
+            console.log(`  ✅ Exam ${exam.exam_name}: hasPlan=${hasPlan}, firstTaskId=${firstTaskId}`)
+            
             return {
               ...exam,
-              hasPlan: !!finalGoalData,
+              hasPlan,
               firstTaskId
             }
           })

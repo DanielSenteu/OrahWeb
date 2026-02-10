@@ -171,41 +171,102 @@ export default function TaskWorkSessionPage() {
         if (!user) return
 
         // Check if this goal is an exam
-        const { data: goalData } = await supabase
+        const { data: goalData, error: goalError } = await supabase
           .from('user_goals')
-          .select('goal_type, exam_id')
+          .select('goal_type, exam_id, summary')
           .eq('id', task.goal_id)
-          .single()
+          .maybeSingle()
 
-        if (goalData?.goal_type === 'exam' && goalData.exam_id) {
-          console.log('✅ Exam task detected:', { examId: goalData.exam_id, goalType: goalData.goal_type })
+        console.log('🔍 Checking if task is exam:', { goalId: task.goal_id, goalData, goalError })
+
+        // Check if it's an exam task (by goal_type OR by summary containing "Exam:")
+        const isExamGoal = goalData?.goal_type === 'exam' || (goalData?.summary && goalData.summary.toLowerCase().startsWith('exam:'))
+        
+        if (isExamGoal) {
+          console.log('✅ Exam task detected:', { examId: goalData?.exam_id, goalType: goalData?.goal_type, summary: goalData?.summary })
           setIsExamTask(true)
-          setExamId(goalData.exam_id)
+          
+          // Try to get exam_id from goal, or find exam by matching summary
+          let examIdToUse = goalData?.exam_id
+          
+          if (!examIdToUse && goalData?.summary) {
+            // Extract exam name from summary (e.g., "Exam: RAT Quiz #1" -> "RAT Quiz #1")
+            const examNameMatch = goalData.summary.match(/Exam:\s*(.+)/i)
+            if (examNameMatch) {
+              const examName = examNameMatch[1].trim()
+              // Try to find exam by name
+              const { data: examMatch } = await supabase
+                .from('course_exams')
+                .select('id')
+                .eq('user_id', user.id)
+                .ilike('exam_name', `%${examName}%`)
+                .limit(1)
+                .maybeSingle()
+              
+              if (examMatch) {
+                examIdToUse = examMatch.id
+                console.log('✅ Found exam by name match:', examIdToUse)
+              }
+            }
+          }
+          
+          if (examIdToUse) {
+            setExamId(examIdToUse)
+          }
+          
           setLoadingExamData(true)
 
           // Get exam details to find the topic
-          const { data: examData } = await supabase
-            .from('course_exams')
-            .select('exam_name, topics')
-            .eq('id', goalData.exam_id)
-            .eq('user_id', user.id)
-            .single()
+          let examData = null
+          if (examIdToUse) {
+            const { data: exam } = await supabase
+              .from('course_exams')
+              .select('exam_name, topics')
+              .eq('id', examIdToUse)
+              .eq('user_id', user.id)
+              .maybeSingle()
+            
+            examData = exam
+          }
 
-          if (examData) {
-            // Extract topic from task title (e.g., "Study: Recursion" -> "Recursion")
-            const topicMatch = task.title.match(/Study:\s*(.+)/i) || task.title.match(/Study\s+(.+)/i)
-            const topic = topicMatch ? topicMatch[1].trim() : examData.topics?.[0] || null
+          // Extract topic from task title (multiple patterns)
+          let topic = null
+          const titlePatterns = [
+            /Study:\s*(.+)/i,
+            /Study\s+(.+)/i,
+            /^(.+?)\s*-\s*Core\s+Concepts/i,
+            /^(.+?)\s*-\s*Practice/i,
+            /^(.+?)\s*:\s*Core/i
+          ]
+          
+          for (const pattern of titlePatterns) {
+            const match = task.title.match(pattern)
+            if (match) {
+              topic = match[1].trim()
+              break
+            }
+          }
+          
+          // If no topic from title, try from exam topics or use task title
+          if (!topic) {
+            topic = examData?.topics?.[0] || task.title.replace(/^Study\s*/i, '').trim() || null
+          }
 
-            if (topic) {
-              console.log('✅ Exam topic set:', topic)
-              setExamTopic(topic)
+          if (topic) {
+            console.log('✅ Exam topic set:', topic)
+            setExamTopic(topic)
 
-              // Get documents for this exam
-              const { data: documents } = await supabase
-                .from('exam_documents')
-                .select('document_name, extracted_text, topics')
-                .eq('exam_id', goalData.exam_id)
-                .eq('user_id', user.id)
+              // Get documents for this exam (if examId is available)
+              let documents = null
+              if (examIdToUse) {
+                const { data: docs } = await supabase
+                  .from('exam_documents')
+                  .select('document_name, extracted_text, topics')
+                  .eq('exam_id', examIdToUse)
+                  .eq('user_id', user.id)
+                
+                documents = docs
+              }
 
               // Get relevant documents for this topic
               const relevantDocs = documents
@@ -219,7 +280,7 @@ export default function TaskWorkSessionPage() {
                 ) || []
 
               // Prepare notes (chunk + summarize if needed)
-              if (relevantDocs.length > 0) {
+              if (relevantDocs && relevantDocs.length > 0) {
                 try {
                   const { data: { session } } = await supabase.auth.getSession()
                   if (session) {
@@ -259,7 +320,7 @@ export default function TaskWorkSessionPage() {
                               Authorization: `Bearer ${session.access_token}`,
                             },
                             body: JSON.stringify({
-                              examId: goalData.exam_id,
+                              examId: examIdToUse,
                               topic: topic,
                               notes: preparedNotes, // Use prepared (possibly summarized) notes
                             }),
@@ -298,10 +359,35 @@ export default function TaskWorkSessionPage() {
                   setExamNotes(fallbackNotes)
                 }
               } else {
-                setExamNotes(task.notes || 'No notes available for this topic.')
+                // No documents, but still show exam flow with task notes
+                setExamNotes(task.notes || 'No notes available for this topic yet. Study materials will appear here once uploaded.')
               }
+            } else {
+              // No documents at all, but still show exam flow
+              setExamNotes(task.notes || 'No notes available for this topic yet. Study materials will appear here once uploaded.')
             }
+          } else {
+            // No exam data, but topic is set - still show exam flow
+            setExamNotes(task.notes || 'No notes available for this topic yet.')
           }
+        } else {
+          // Topic not found, but it's an exam task - still show exam flow
+          console.warn('⚠️ Exam task but no topic found, using task title')
+          setExamTopic(task.title.replace(/^Study\s*/i, '').trim() || 'Exam Topic')
+          setExamNotes(task.notes || 'No notes available for this topic yet.')
+        }
+      } else {
+        // Goal is exam type but no exam_id - still treat as exam
+        console.log('⚠️ Exam goal but no exam_id, treating as exam task anyway')
+        setIsExamTask(true)
+        const topicFromTitle = task.title.match(/Study:\s*(.+)/i)?.[1]?.trim() || 
+                              task.title.match(/Study\s+(.+)/i)?.[1]?.trim() ||
+                              task.title.replace(/^Study\s*/i, '').trim()
+        if (topicFromTitle) {
+          setExamTopic(topicFromTitle)
+          setExamNotes(task.notes || 'No notes available for this topic yet.')
+        }
+      }
         }
       } catch (error) {
         console.error('Error loading exam data:', error)
@@ -310,7 +396,9 @@ export default function TaskWorkSessionPage() {
       }
     }
 
-    checkAndLoadExamData()
+    if (task?.goal_id) {
+      checkAndLoadExamData()
+    }
   }, [task, supabase])
 
   const loadTask = async () => {
@@ -746,13 +834,13 @@ export default function TaskWorkSessionPage() {
         {/* Main Content */}
         <div className="work-content">
           {/* For Exam Tasks: Show ONLY Exam Notes + Quiz Button (NO timer/checkpoints/chat) */}
-          {isExamTask && examTopic ? (
+          {isExamTask ? (
             <div style={{ width: '100%', maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
               {/* Exam Notes Section - Full Width */}
               <div className="exam-notes-card" style={{ marginBottom: '2rem' }}>
                 <div className="exam-notes-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                   <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                    Study Notes: {examTopic}
+                    Study Notes: {examTopic || task?.title || 'Exam Topic'}
                   </h2>
                   <button
                     onClick={() => router.push(`/tasks/${taskId}`)}
@@ -896,30 +984,51 @@ export default function TaskWorkSessionPage() {
                         )}
                       </div>
                     </div>
-                    {examId && examTopic && (
-                      <div className="exam-notes-actions" style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+                    {(examId || isExamTask) && (examTopic || task?.title) && (
+                      <div className="exam-notes-actions" style={{ marginTop: '2rem', textAlign: 'center', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
                         <a
-                          href={`/exam/quiz/${examId}/${encodeURIComponent(examTopic)}`}
+                          href={examId && examTopic ? `/exam/quiz/${examId}/${encodeURIComponent(examTopic)}` : '#'}
+                          onClick={(e) => {
+                            if (!examId || !examTopic) {
+                              e.preventDefault()
+                              alert('Quiz will be available once exam documents are uploaded and processed.')
+                            }
+                          }}
                           className="btn-quiz"
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '1rem 2rem',
-                            fontSize: '1rem',
+                            gap: '0.75rem',
+                            padding: '1.25rem 2.5rem',
+                            fontSize: '1.125rem',
                             fontWeight: 600,
-                            background: 'var(--primary-purple)',
-                            color: 'white',
-                            borderRadius: '8px',
+                            background: examId && examTopic ? 'linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-pink) 100%)' : 'var(--bg-secondary)',
+                            color: examId && examTopic ? 'white' : 'var(--text-secondary)',
+                            borderRadius: '12px',
                             textDecoration: 'none',
-                            transition: 'all 0.2s'
+                            transition: 'all 0.2s',
+                            boxShadow: examId && examTopic ? '0 4px 12px rgba(139, 92, 246, 0.3)' : 'none',
+                            cursor: examId && examTopic ? 'pointer' : 'not-allowed',
+                            opacity: examId && examTopic ? 1 : 0.6
+                          }}
+                          onMouseEnter={(e) => {
+                            if (examId && examTopic) {
+                              e.currentTarget.style.transform = 'translateY(-2px)'
+                              e.currentTarget.style.boxShadow = '0 6px 16px rgba(139, 92, 246, 0.4)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (examId && examTopic) {
+                              e.currentTarget.style.transform = 'translateY(0)'
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.3)'
+                            }
                           }}
                         >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '20px', height: '20px' }}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '24px', height: '24px' }}>
                             <path d="M9 11l3 3L22 4"/>
                             <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
                           </svg>
-                          Start Quiz (10 questions)
+                          {examId && examTopic ? 'Start Quiz (10 questions)' : 'Quiz (Upload documents to enable)'}
                         </a>
                       </div>
                     )}
