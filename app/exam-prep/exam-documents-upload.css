@@ -1,0 +1,178 @@
+/* Exam Documents Upload Styles */
+
+.exam-documents-section {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.exam-documents-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.exam-documents-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.exam-documents-count {
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+}
+
+.exam-dropzone {
+  border: 2px dashed var(--border-subtle);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  background: var(--bg-secondary);
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+
+.exam-dropzone:hover {
+  border-color: var(--primary-cyan);
+  background: rgba(6, 182, 212, 0.05);
+}
+
+.exam-dropzone.dragging {
+  border-color: var(--primary-cyan);
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.exam-dropzone.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dropzone-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.6;
+}
+
+.dropzone-text {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.dropzone-text strong {
+  color: var(--primary-cyan);
+}
+
+.dropzone-hint {
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+}
+
+.exam-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.exam-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.exam-file-item:hover {
+  border-color: var(--primary-cyan);
+  background: rgba(6, 182, 212, 0.05);
+}
+
+.exam-file-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.exam-file-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.exam-file-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.exam-file-name {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exam-file-size {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.exam-file-status {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.exam-file-status.extracting {
+  background: rgba(6, 182, 212, 0.1);
+  color: var(--primary-cyan);
+}
+
+.exam-file-status.ready {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.exam-file-remove {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.exam-file-remove:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: #ef4444;
+}
+
+.exam-file-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.exam-file-remove svg {
+  width: 18px;
+  height: 18px;
+}

@@ -18,7 +18,8 @@ export async function POST(req: Request) {
       weakTopics,
       hoursPerDay,
       examDate,
-      studyMaterials
+      studyMaterials,
+      documents = [] // Array of {name, type, text}
     } = await req.json()
     
     if (!courseName || !totalChapters || !hoursPerDay || !examDate || !userId) {
@@ -29,6 +30,23 @@ export async function POST(req: Request) {
     if (!authHeader) {
       return NextResponse.json({ error: 'Missing auth token' }, { status: 401 })
     }
+
+    // Initialize Supabase with auth
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: { Authorization: authHeader },
+        },
+      }
+    )
+
+    // Combine all document texts with study materials
+    const allNotes = [
+      studyMaterials || '',
+      ...documents.map((d: any) => d.text || '').filter(Boolean)
+    ].filter(Boolean).join('\n\n---\n\n')
 
     console.log('📚 Calling exam prep edge function...')
 
@@ -48,7 +66,8 @@ export async function POST(req: Request) {
         weakTopics: weakTopics || '',
         hoursPerDay,
         examDate,
-        studyMaterials: studyMaterials || ''
+        studyMaterials: allNotes, // Combined notes from all documents
+        documents: documents, // Pass documents for topic extraction
       }),
     })
 
@@ -60,6 +79,28 @@ export async function POST(req: Request) {
     }
 
     console.log('✅ Exam plan created:', data.goalId)
+
+    // If examId is provided (from course context), save documents
+    if (data.examId && Array.isArray(documents) && documents.length > 0) {
+      try {
+        const documentsToInsert = documents.map((doc: any) => ({
+          exam_id: data.examId,
+          user_id: userId,
+          document_name: doc.name || 'Untitled',
+          document_type: doc.type === 'application/pdf' ? 'pdf' : 
+                        doc.type?.startsWith('image/') ? 'image' : 'text',
+          extracted_text: doc.text || '',
+          topics: [], // Will be extracted by edge function
+        }))
+
+        await supabase
+          .from('exam_documents')
+          .insert(documentsToInsert)
+      } catch (docError) {
+        console.error('Error saving exam documents:', docError)
+        // Non-fatal, continue
+      }
+    }
 
     // Set as active goal
     if (data.success && data.goalId) {

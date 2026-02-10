@@ -76,7 +76,83 @@
   animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
 }
 
-.work-left, .work-right {
+.work-left, .exam-notes-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.exam-notes-header {
+  margin-bottom: 1rem;
+}
+
+.exam-notes-header h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.exam-notes-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  gap: 1rem;
+}
+
+.exam-notes-loading p {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.exam-notes-content {
+  margin-bottom: 1.5rem;
+}
+
+.exam-notes-text {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.exam-notes-actions {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.btn-quiz {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, var(--primary-cyan), var(--primary-purple));
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.btn-quiz:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
+}
+
+.btn-quiz svg {
+  width: 20px;
+  height: 20px;
+}
+
+.work-right {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;

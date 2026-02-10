@@ -7,6 +7,7 @@ import Link from 'next/link'
 import Navigation from '@/components/layout/Navigation'
 import '@/app/styles/academic-form.css'
 import '../assistant/assistant-chat.css'
+import ExamDocumentsSection from './exam-documents-section'
 
 type Message = {
   role: 'user' | 'assistant'
@@ -45,6 +46,14 @@ export default function ExamPrepPage() {
   const [examDate, setExamDate] = useState('')
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [uploadingFile, setUploadingFile] = useState(false)
+  
+  // Document upload state
+  interface ExamDocument {
+    file: File
+    extractedText?: string
+    status: 'pending' | 'extracting' | 'ready' | 'error'
+  }
+  const [examDocuments, setExamDocuments] = useState<ExamDocument[]>([])
 
   // Refs for latest values
   const courseNameRef = useRef('')
@@ -113,22 +122,22 @@ export default function ExamPrepPage() {
       assistantMessage = 'How many hours per day can you dedicate to studying?'
     } else if (questionCount === 5) {
       // After hours per day
-      assistantMessage = 'Do you have any study materials, notes, or guides you want to upload?'
+      assistantMessage = 'Great! Now, please upload your study notes and materials. You can upload up to 10 files (PDFs, images, or text files). This will help me create a more detailed study plan based on your actual notes.'
     } else if (questionCount === 6) {
-      // After file question
-      if (textToSend.toLowerCase().includes('yes')) {
-        setHasFile(true)
-        assistantMessage = 'Great! Please upload your file or paste your study materials/summary below.'
-      } else {
-        setHasFile(false)
-        assistantMessage = 'No problem! Please write a brief summary of what you need to study (topics, chapters, key concepts).'
+      // After documents uploaded - ask for exam date
+      // Combine all document texts
+      const allTexts = examDocuments
+        .filter(d => d.extractedText)
+        .map(d => d.extractedText)
+        .join('\n\n---\n\n')
+      
+      if (allTexts) {
+        setStudyMaterials(allTexts)
+        studyMaterialsRef.current = allTexts
       }
+      
+      assistantMessage = 'Perfect! When is your exam? (Enter date in format: YYYY-MM-DD or "in X days/weeks")'
     } else if (questionCount === 7) {
-      // After materials
-      setStudyMaterials(textToSend)
-      studyMaterialsRef.current = textToSend
-      assistantMessage = 'Perfect! Last question: When is your exam?'
-    } else if (questionCount === 8) {
       // After exam date - create plan
       const finalCourseName = courseNameRef.current
       const finalTotalChapters = totalChaptersRef.current
@@ -145,13 +154,13 @@ export default function ExamPrepPage() {
         return
       }
 
-      assistantMessage = "Awesome! I'm creating your personalized exam study plan with focus on your weak topics. This will just take a moment..."
+      assistantMessage = "Awesome! I'm analyzing your notes and creating your personalized exam study plan. This will just take a moment..."
       setQuestionCount(newQuestionCount)
       setMessages([...newMessages, { role: 'assistant', content: assistantMessage }])
       setLoading(false)
 
       setTimeout(() => {
-        handleCreatePlan(finalCourseName, finalTotalChapters, finalWeakChapters, finalWeakTopics, finalHoursPerDay, finalStudyMaterials, finalExamDate)
+        handleCreatePlan(finalCourseName, finalTotalChapters, finalWeakChapters, finalWeakTopics, finalHoursPerDay, finalStudyMaterials, finalExamDate, examDocuments)
       }, 1500)
       return
     }
@@ -168,7 +177,8 @@ export default function ExamPrepPage() {
     weakTopics: string,
     hours: number,
     materials: string,
-    exam: string
+    exam: string,
+    documents: ExamDocument[] = []
   ) => {
     setCreatingPlan(true)
 
@@ -188,6 +198,15 @@ export default function ExamPrepPage() {
 
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
+      // Prepare documents data
+      const documentsData = documents
+        .filter(d => d.extractedText && d.status === 'ready')
+        .map(d => ({
+          name: d.file.name,
+          type: d.file.type,
+          text: d.extractedText,
+        }))
+
       fetch('/api/exam-plan', {
         method: 'POST',
         headers: {
@@ -203,7 +222,8 @@ export default function ExamPrepPage() {
           weakTopics: weakTopics,
           hoursPerDay: hours,
           examDate: exam,
-          studyMaterials: materials
+          studyMaterials: materials,
+          documents: documentsData, // Send all documents
         }),
       }).catch((e) => {
         console.error('Background plan creation error:', e)
@@ -319,8 +339,8 @@ export default function ExamPrepPage() {
           </div>
         </div>
 
-        {questionCount <= 8 && (
-          <div className="progress-indicator">Question {questionCount} of 8</div>
+        {questionCount <= 7 && (
+          <div className="progress-indicator">Question {questionCount} of 7</div>
         )}
 
         <div className="messages-container" id="messagesContainer">
@@ -375,8 +395,8 @@ export default function ExamPrepPage() {
                       </div>
                     )}
 
-                    {/* Q8: Exam date */}
-                    {questionCount === 8 && (
+                    {/* Q7: Exam date */}
+                    {questionCount === 7 && (
                       <div className="quick-replies">
                         {['3 days', '1 week', '2 weeks', '1 month'].map(period => {
                           const days = period === '3 days' ? 3 : period === '1 week' ? 7 : period === '2 weeks' ? 14 : 30
@@ -423,45 +443,47 @@ export default function ExamPrepPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="input-container">
-          <div className="input-wrapper">
-            {questionCount === 7 && hasFile === true && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={handleFileUpload}
-                  style={{ display: 'none' }}
-                />
+        {/* Document Upload Section */}
+        {questionCount === 6 && (
+          <div style={{ padding: '0 2rem 1rem 2rem' }}>
+            <ExamDocumentsSection
+              documents={examDocuments}
+              onDocumentsChange={setExamDocuments}
+              maxFiles={10}
+            />
+            {examDocuments.length > 0 && examDocuments.every(d => d.status === 'ready' || d.status === 'error') && (
+              <div style={{ textAlign: 'center', marginTop: '1rem' }}>
                 <button
-                  className="upload-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingFile || !!uploadedFile}
+                  onClick={() => sendMessage('Continue with uploaded documents')}
+                  className="btn-primary"
                   style={{
-                    padding: '0.75rem 1.25rem',
-                    background: uploadedFile ? 'rgba(16, 185, 129, 0.2)' : 'rgba(168, 85, 247, 0.15)',
-                    border: '1px solid ' + (uploadedFile ? 'rgba(16, 185, 129, 0.4)' : 'rgba(168, 85, 247, 0.3)'),
-                    borderRadius: '10px',
-                    color: uploadedFile ? '#10B981' : '#A855F7',
+                    padding: '0.75rem 1.5rem',
+                    background: 'linear-gradient(135deg, var(--primary-cyan), var(--primary-purple))',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
                     fontWeight: 600,
-                    cursor: uploadedFile ? 'default' : 'pointer',
-                    marginRight: '0.75rem'
+                    cursor: 'pointer',
                   }}
                 >
-                  {uploadingFile ? 'Uploading...' : uploadedFile ? `✓ ${uploadedFile.name}` : '📎 Upload File'}
+                  Continue with {examDocuments.filter(d => d.status === 'ready').length} document{examDocuments.filter(d => d.status === 'ready').length !== 1 ? 's' : ''}
                 </button>
-              </>
+              </div>
             )}
+          </div>
+        )}
+
+        <div className="input-container">
+          <div className="input-wrapper">
             <textarea
               className="message-input"
-              placeholder={questionCount === 7 ? (hasFile === true ? 'File uploaded - click send' : 'Type your summary...') : 'Type your message...'}
+              placeholder={questionCount === 6 ? 'Upload documents above, then click continue' : questionCount === 7 ? 'Enter exam date (YYYY-MM-DD or "in X days/weeks")' : 'Type your message...'}
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onInput={handleTextareaInput}
               onKeyDown={handleKeyPress}
-              disabled={loading || creatingPlan || uploadingFile}
+              disabled={loading || creatingPlan || uploadingFile || (questionCount === 6 && examDocuments.length === 0)}
             />
             <button
               className="send-btn"
