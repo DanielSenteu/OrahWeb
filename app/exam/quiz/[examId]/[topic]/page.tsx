@@ -57,7 +57,7 @@ export default function QuizPage() {
       const relevantDocs = documents?.filter(d => 
         !d.topics || 
         d.topics.length === 0 || 
-        d.topics.some(t => 
+        d.topics.some((t: string) => 
           t.toLowerCase().includes(decodedTopic.toLowerCase()) ||
           decodedTopic.toLowerCase().includes(t.toLowerCase())
         )
