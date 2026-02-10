@@ -388,7 +388,6 @@ export default function TaskWorkSessionPage() {
           setExamNotes(task.notes || 'No notes available for this topic yet.')
         }
       }
-        }
       } catch (error) {
         console.error('Error loading exam data:', error)
       } finally {
