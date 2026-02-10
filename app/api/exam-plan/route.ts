@@ -57,18 +57,20 @@ export async function POST(req: Request) {
         Authorization: authHeader,
         apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
       },
-      body: JSON.stringify({
-        userId,
-        timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-        courseName,
-        totalChapters,
-        weakChapters: weakChapters || '',
-        weakTopics: weakTopics || '',
-        hoursPerDay,
-        examDate,
-        studyMaterials: allNotes, // Combined notes from all documents
-        documents: documents, // Pass documents for topic extraction
-      }),
+        body: JSON.stringify({
+          userId,
+          timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+          courseName,
+          totalChapters,
+          weakChapters: weakChapters || '',
+          weakTopics: weakTopics || '',
+          hoursPerDay,
+          examDate,
+          studyMaterials: allNotes, // Combined notes from all documents
+          documents: documents, // Pass documents for topic extraction
+          examId: examId || null, // Pass examId if provided
+          courseId: courseId || null, // Pass courseId if provided
+        }),
     })
 
     const data = await res.json()

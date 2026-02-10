@@ -137,27 +137,47 @@ export default function CourseDashboardPage() {
         // For each exam, check if a goal/plan exists
         const examsWithPlanStatus = await Promise.all(
           (examsData || []).map(async (exam) => {
-            // Check if there's a goal for this exam
-            const { data: goalData } = await supabase
+            console.log(`🔍 Checking plan for exam: ${exam.exam_name} (${exam.id})`)
+            
+            // Check if there's a goal for this exam (by exam_id)
+            const { data: goalData, error: goalError } = await supabase
               .from('user_goals')
               .select('id')
               .eq('user_id', user.id)
               .eq('exam_id', exam.id)
               .eq('goal_type', 'exam')
-              .limit(1)
-              .single()
+              .maybeSingle()
+            
+            console.log(`  Goal by exam_id:`, goalData, goalError)
+            
+            // Also check if goal summary contains exam name (fallback for old goals or if exam_id not set)
+            let goalDataFallback = null
+            if (!goalData) {
+              const { data: fallbackGoal, error: fallbackError } = await supabase
+                .from('user_goals')
+                .select('id')
+                .eq('user_id', user.id)
+                .ilike('summary', `%${exam.exam_name}%`)
+                .maybeSingle()
+              
+              console.log(`  Goal by summary:`, fallbackGoal, fallbackError)
+              goalDataFallback = fallbackGoal
+            }
+            
+            const finalGoalData = goalData || goalDataFallback
+            console.log(`  Final goal data:`, finalGoalData)
             
             // If goal exists, get the first task
             let firstTaskId = null
-            if (goalData) {
+            if (finalGoalData) {
               const { data: taskData } = await supabase
                 .from('task_items')
                 .select('id')
-                .eq('goal_id', goalData.id)
+                .eq('goal_id', finalGoalData.id)
                 .eq('user_id', user.id)
                 .order('day_number', { ascending: true })
                 .limit(1)
-                .single()
+                .maybeSingle()
               
               if (taskData) {
                 firstTaskId = taskData.id
@@ -166,7 +186,7 @@ export default function CourseDashboardPage() {
             
             return {
               ...exam,
-              hasPlan: !!goalData,
+              hasPlan: !!finalGoalData,
               firstTaskId
             }
           })

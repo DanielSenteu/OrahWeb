@@ -16,9 +16,14 @@ type Message = {
 
 export default function ExamPrepPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Get examId and courseId from URL params
+  const examIdFromUrl = searchParams.get('examId')
+  const courseIdFromUrl = searchParams.get('courseId')
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -224,6 +229,8 @@ export default function ExamPrepPage() {
           examDate: exam,
           studyMaterials: materials,
           documents: documentsData, // Send all documents
+          examId: examIdFromUrl || null, // Pass examId if from course context
+          courseId: courseIdFromUrl || null, // Pass courseId if from course context
         }),
       }).catch((e) => {
         console.error('Background plan creation error:', e)
