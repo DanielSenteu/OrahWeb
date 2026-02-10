@@ -748,6 +748,8 @@ Return ONLY valid JSON with the complete study plan.`
         total_days: studyPlan.totalDays,
         daily_minutes_budget: minutesPerDay,
         domain: "academic",
+        goal_type: "exam", // Mark as exam goal
+        exam_id: examId || null, // Link to exam if provided
         created_at: new Date().toISOString()
       })
       .select()

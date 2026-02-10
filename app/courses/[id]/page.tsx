@@ -134,7 +134,45 @@ export default function CourseDashboardPage() {
           .eq('user_id', user.id)
           .order('exam_date', { ascending: true })
         
-        setExams(examsData || [])
+        // For each exam, check if a goal/plan exists
+        const examsWithPlanStatus = await Promise.all(
+          (examsData || []).map(async (exam) => {
+            // Check if there's a goal for this exam
+            const { data: goalData } = await supabase
+              .from('user_goals')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('exam_id', exam.id)
+              .eq('goal_type', 'exam')
+              .limit(1)
+              .single()
+            
+            // If goal exists, get the first task
+            let firstTaskId = null
+            if (goalData) {
+              const { data: taskData } = await supabase
+                .from('task_items')
+                .select('id')
+                .eq('goal_id', goalData.id)
+                .eq('user_id', user.id)
+                .order('day_number', { ascending: true })
+                .limit(1)
+                .single()
+              
+              if (taskData) {
+                firstTaskId = taskData.id
+              }
+            }
+            
+            return {
+              ...exam,
+              hasPlan: !!goalData,
+              firstTaskId
+            }
+          })
+        )
+        
+        setExams(examsWithPlanStatus)
       }
     } catch (error) {
       console.error('Error loading tab data:', error)
@@ -695,12 +733,25 @@ export default function CourseDashboardPage() {
                           </span>
                         </div>
                         <div className="exam-actions">
-                          <Link 
-                            href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`}
-                            className="btn-exam-action"
-                          >
-                            {exam.study_plan ? 'View Study Plan' : 'Create Study Plan'}
-                          </Link>
+                          {exam.hasPlan && exam.firstTaskId ? (
+                            <Link 
+                              href={`/tasks/${exam.firstTaskId}/work`}
+                              className="btn-exam-action"
+                              style={{
+                                background: 'var(--primary-purple)',
+                                color: 'white'
+                              }}
+                            >
+                              Work on Task
+                            </Link>
+                          ) : (
+                            <Link 
+                              href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`}
+                              className="btn-exam-action"
+                            >
+                              Create Study Plan
+                            </Link>
+                          )}
                         </div>
                       </div>
                     ))}
