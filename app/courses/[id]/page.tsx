@@ -758,11 +758,12 @@ export default function CourseDashboardPage() {
                               href={`/tasks/${exam.firstTaskId}/work`}
                               className="btn-exam-action"
                               style={{
-                                background: 'var(--primary-purple)',
-                                color: 'white'
+                                background: 'linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-pink) 100%)',
+                                color: 'white',
+                                fontWeight: 600
                               }}
                             >
-                              Work on Task
+                              Start Studying
                             </Link>
                           ) : (
                             <Link 

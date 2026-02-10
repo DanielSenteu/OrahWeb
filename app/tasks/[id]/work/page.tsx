@@ -745,19 +745,21 @@ export default function TaskWorkSessionPage() {
 
         {/* Main Content */}
         <div className="work-content">
-          {/* For Exam Tasks: Show Exam Notes Prominently */}
+          {/* For Exam Tasks: Show ONLY Exam Notes + Quiz Button (NO timer/checkpoints/chat) */}
           {isExamTask && examTopic ? (
-            <div style={{ width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
+            <div style={{ width: '100%', maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
               {/* Exam Notes Section - Full Width */}
               <div className="exam-notes-card" style={{ marginBottom: '2rem' }}>
-                <div className="exam-notes-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3>Study Notes: {examTopic}</h3>
+                <div className="exam-notes-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                    Study Notes: {examTopic}
+                  </h2>
                   <button
                     onClick={() => router.push(`/tasks/${taskId}`)}
                     className="back-btn-small"
-                    style={{ margin: 0 }}
+                    style={{ margin: 0, padding: '0.5rem 1rem' }}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '18px', height: '18px' }}>
                       <polyline points="15 18 9 12 15 6"/>
                     </svg>
                     Back
@@ -1008,163 +1010,8 @@ export default function TaskWorkSessionPage() {
             )}
           </div>
 
-          {/* Right Column - Exam Notes & Chat */}
+          {/* Right Column - Chat (ONLY for non-exam tasks) */}
           <div className="work-right">
-            {/* Exam Notes Section */}
-            {isExamTask && examTopic && (
-              <div className="exam-notes-card">
-                <div className="exam-notes-header">
-                  <h3>Study Notes: {examTopic}</h3>
-                </div>
-                {loadingExamData ? (
-                  <div className="exam-notes-loading">
-                    <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
-                    <p>Loading notes...</p>
-                  </div>
-                ) : generatingNotes ? (
-                  <div className="exam-notes-loading">
-                    <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
-                    <p>Generating structured notes...</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="exam-notes-content">
-                      <div className="exam-notes-text">
-                        {structuredNotes ? (
-                          <div style={{ 
-                            lineHeight: '1.6',
-                            color: 'var(--text-secondary)',
-                            fontSize: '0.9375rem',
-                            maxHeight: '500px',
-                            overflowY: 'auto',
-                            padding: '1rem',
-                            background: 'var(--bg-secondary)',
-                            borderRadius: '8px',
-                          }}>
-                            <h4 style={{ 
-                              color: 'var(--text-primary)', 
-                              marginTop: 0, 
-                              marginBottom: '1rem',
-                              fontSize: '1.125rem',
-                              fontWeight: 600
-                            }}>
-                              {structuredNotes.title || `Study Notes: ${examTopic}`}
-                            </h4>
-                            
-                            {structuredNotes.summary && (
-                              <div style={{ 
-                                marginBottom: '1.5rem',
-                                padding: '0.75rem',
-                                background: 'rgba(6, 182, 212, 0.1)',
-                                borderRadius: '6px',
-                                borderLeft: '3px solid var(--primary-cyan)'
-                              }}>
-                                <strong>Overview:</strong> {structuredNotes.summary}
-                              </div>
-                            )}
-
-                            {structuredNotes.sections && structuredNotes.sections.map((section: any, idx: number) => (
-                              <div key={idx} style={{ marginBottom: '1.5rem' }}>
-                                <h5 style={{ 
-                                  color: 'var(--text-primary)', 
-                                  marginBottom: '0.5rem',
-                                  fontSize: '1rem',
-                                  fontWeight: 600
-                                }}>
-                                  {section.title}
-                                </h5>
-                                <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
-                                  {section.content && section.content.map((point: string, pIdx: number) => (
-                                    <li key={pIdx} style={{ marginBottom: '0.5rem' }}>
-                                      {point}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ))}
-
-                            {structuredNotes.definitions && structuredNotes.definitions.length > 0 && (
-                              <div style={{ marginBottom: '1.5rem' }}>
-                                <h5 style={{ 
-                                  color: 'var(--text-primary)', 
-                                  marginBottom: '0.5rem',
-                                  fontSize: '1rem',
-                                  fontWeight: 600
-                                }}>
-                                  Key Definitions
-                                </h5>
-                                {structuredNotes.definitions.map((def: any, idx: number) => (
-                                  <div key={idx} style={{ 
-                                    marginBottom: '0.75rem',
-                                    padding: '0.5rem',
-                                    background: 'var(--bg-elevated)',
-                                    borderRadius: '4px'
-                                  }}>
-                                    <strong>{def.term}:</strong> {def.definition}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {structuredNotes.keyTakeaways && structuredNotes.keyTakeaways.length > 0 && (
-                              <div style={{ 
-                                marginTop: '1.5rem',
-                                padding: '0.75rem',
-                                background: 'rgba(168, 85, 247, 0.1)',
-                                borderRadius: '6px',
-                                borderLeft: '3px solid var(--primary-purple)'
-                              }}>
-                                <strong>Key Takeaways:</strong>
-                                <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.25rem' }}>
-                                  {structuredNotes.keyTakeaways.map((takeaway: string, idx: number) => (
-                                    <li key={idx} style={{ marginBottom: '0.25rem' }}>
-                                      {takeaway}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        ) : examNotes ? (
-                          <div style={{ 
-                            whiteSpace: 'pre-wrap', 
-                            lineHeight: '1.6',
-                            color: 'var(--text-secondary)',
-                            fontSize: '0.9375rem',
-                            maxHeight: '400px',
-                            overflowY: 'auto',
-                            padding: '1rem',
-                            background: 'var(--bg-secondary)',
-                            borderRadius: '8px',
-                          }}>
-                            {examNotes}
-                          </div>
-                        ) : (
-                          <p style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                            No notes available for this topic yet.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    {examId && examTopic && (
-                      <div className="exam-notes-actions">
-                        <a
-                          href={`/exam/quiz/${examId}/${encodeURIComponent(examTopic)}`}
-                          className="btn-quiz"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 11l3 3L22 4"/>
-                            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
-                          </svg>
-                          Start Quiz (10 questions)
-                        </a>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
             {!showChat ? (
               <div className="orah-cta-card">
                 <div className="orah-cta-content">
