@@ -150,6 +150,118 @@ const daysBetween = (start: Date, end: Date): number => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 }
 
+// Summarize a single document to reduce token usage
+async function summarizeDocument(documentText: string, documentName: string): Promise<string> {
+  try {
+    // If document is small (< 5000 chars), return as-is
+    if (documentText.length < 5000) {
+      return documentText
+    }
+
+    // Estimate tokens (rough: 1 token ≈ 4 chars)
+    const estimatedTokens = Math.ceil(documentText.length / 4)
+    
+    // If under 20k tokens, summarize in one go
+    if (estimatedTokens < 20000) {
+      const summaryPrompt = `Summarize the following study material document. Create a concise summary that preserves:
+1. All major topics and concepts
+2. Key definitions and formulas
+3. Important examples and problem types
+4. Critical information for exam preparation
+
+Document: ${documentName}
+Content:
+${documentText}
+
+Return a comprehensive but concise summary (aim for 20-30% of original length while preserving all key information):`
+
+      const response = await fetch(OPENAI_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini", // Use cheaper model for summarization
+          messages: [
+            { role: "system", content: "You create concise summaries of study materials that preserve all key information for exam preparation." },
+            { role: "user", content: summaryPrompt }
+          ],
+          temperature: 0.3,
+          max_tokens: Math.min(8000, Math.ceil(estimatedTokens * 0.3)), // Summary should be ~30% of original
+        })
+      })
+
+      if (!response.ok) {
+        console.warn(`⚠️ Summarization failed for ${documentName}, using truncated version`)
+        // Fallback: return first 10000 chars
+        return documentText.substring(0, 10000) + "\n\n[... document truncated due to length ...]"
+      }
+
+      const data = await response.json()
+      const summary = data.choices?.[0]?.message?.content || documentText.substring(0, 10000)
+      return summary
+    }
+
+    // For very large documents (>20k tokens), chunk and summarize
+    const MAX_CHUNK_CHARS = 40000 // ~10k tokens per chunk
+    const chunks: string[] = []
+    
+    for (let i = 0; i < documentText.length; i += MAX_CHUNK_CHARS) {
+      const chunk = documentText.substring(i, i + MAX_CHUNK_CHARS)
+      chunks.push(chunk)
+    }
+
+    console.log(`📄 Document ${documentName} split into ${chunks.length} chunks for summarization`)
+
+    // Summarize each chunk
+    const chunkSummaries = await Promise.all(
+      chunks.map(async (chunk, index) => {
+        const chunkPrompt = `Summarize this section (part ${index + 1} of ${chunks.length}) of a study document. Preserve all key topics, concepts, definitions, and examples:
+
+${chunk}
+
+Return a concise summary:`
+
+        try {
+          const response = await fetch(OPENAI_URL, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${OPENAI_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [
+                { role: "system", content: "You summarize study material sections concisely." },
+                { role: "user", content: chunkPrompt }
+              ],
+              temperature: 0.3,
+              max_tokens: 4000,
+            })
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            return data.choices?.[0]?.message?.content || chunk.substring(0, 2000)
+          }
+        } catch (error) {
+          console.warn(`⚠️ Chunk ${index + 1} summarization failed:`, error)
+        }
+        
+        return chunk.substring(0, 2000) // Fallback
+      })
+    )
+
+    // Combine chunk summaries
+    return chunkSummaries.join('\n\n---\n\n')
+  } catch (error) {
+    console.warn(`⚠️ Error summarizing document ${documentName}:`, error)
+    // Fallback: return truncated version
+    return documentText.substring(0, 10000) + "\n\n[... document truncated due to error ...]"
+  }
+}
+
 // Extract topics from combined notes using OpenAI
 async function extractTopics(combinedNotes: string): Promise<string[]> {
   try {
@@ -200,7 +312,7 @@ Example output:
       const topics = Array.isArray(parsed) ? parsed : (parsed.topics || parsed.topics_array || [])
       
       if (Array.isArray(topics) && topics.length > 0) {
-        return topics.filter((t: any) => typeof t === 'string' && t.trim().length > 0)
+        return topics.filter((t: unknown) => typeof t === 'string' && t.trim().length > 0) as string[]
       }
     } catch (e) {
       console.warn("⚠️ Failed to parse topics, continuing without topics")
@@ -266,13 +378,40 @@ serve(async (req) => {
 
     console.log("📚 Exam Prep: Creating study plan with document support...")
 
-    // Combine all study materials
+    // Step 1: Summarize documents in parallel to reduce token usage
+    const documentSummaries: Array<{ name: string; summary: string; originalText: string }> = []
+    
+    if (documents.length > 0) {
+      console.log(`📝 Summarizing ${documents.length} documents to reduce token usage...`)
+      
+      // Summarize documents in parallel (but limit concurrency to avoid rate limits)
+      const BATCH_SIZE = 3 // Process 3 at a time
+      for (let i = 0; i < documents.length; i += BATCH_SIZE) {
+        const batch = documents.slice(i, i + BATCH_SIZE)
+        const batchSummaries = await Promise.all(
+          batch.map(async (doc) => {
+            const summary = await summarizeDocument(doc.text || '', doc.name || 'Untitled')
+            return {
+              name: doc.name || 'Untitled',
+              summary,
+              originalText: doc.text || '' // Keep original for database storage
+            }
+          })
+        )
+        documentSummaries.push(...batchSummaries)
+        console.log(`✅ Summarized batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(documents.length / BATCH_SIZE)}`)
+      }
+      
+      console.log(`✅ All documents summarized. Total size reduced from ~${documents.reduce((sum, d) => sum + (d.text?.length || 0), 0)} to ~${documentSummaries.reduce((sum, d) => sum + d.summary.length, 0)} chars`)
+    }
+
+    // Step 2: Combine study materials with document summaries (not full text)
     const allNotes = [
       studyMaterials || '',
-      ...documents.map(d => d.text || '').filter(Boolean)
+      ...documentSummaries.map(d => `[From ${d.name}]\n${d.summary}`).filter(Boolean)
     ].filter(Boolean).join('\n\n---\n\n')
 
-    console.log(`📄 Combined ${documents.length} documents with study materials (${allNotes.length} chars)`)
+    console.log(`📄 Combined ${documents.length} document summaries with study materials (${allNotes.length} chars)`)
 
     // Extract topics from combined notes
     let extractedTopics: string[] = []
@@ -302,17 +441,21 @@ serve(async (req) => {
     }
 
     // Save documents to exam_documents table if examId provided
-    if (examId && documents.length > 0) {
+    // Store FULL original text (not summaries) for quiz generation
+    if (examId && documentSummaries.length > 0) {
       try {
-        const documentsToInsert = documents.map(doc => ({
-          exam_id: examId,
-          user_id: user.id,
-          document_name: doc.name || 'Untitled',
-          document_type: doc.type === 'application/pdf' ? 'pdf' : 
-                        doc.type?.startsWith('image/') ? 'image' : 'text',
-          extracted_text: doc.text || '',
-          topics: extractedTopics, // Store all topics for now
-        }))
+        const documentsToInsert = documentSummaries.map((docSummary, index) => {
+          const originalDoc = documents[index]
+          return {
+            exam_id: examId,
+            user_id: user.id,
+            document_name: docSummary.name,
+            document_type: originalDoc?.type === 'application/pdf' ? 'pdf' : 
+                          originalDoc?.type?.startsWith('image/') ? 'image' : 'text',
+            extracted_text: docSummary.originalText, // Store FULL text for quiz generation
+            topics: extractedTopics, // Store all topics for now
+          }
+        })
 
         const { error: docError } = await supabase
           .from('exam_documents')
@@ -355,6 +498,8 @@ ${topicsSection}
 
 STUDY MATERIALS PROVIDED BY STUDENT:
 ${allNotes || 'No study materials provided'}
+
+NOTE: The above materials include summaries of uploaded documents. Full documents are stored separately for detailed reference during quiz generation.
 
 YOUR MISSION:
 Create a study plan that:
@@ -567,15 +712,38 @@ Return ONLY valid JSON with the complete study plan.`
     const goalId = goal.id
 
     // Create tasks
-    const tasks: any[] = []
-    const checkpoints: any[] = []
+    const tasks: Array<{
+      id: string
+      user_id: string
+      goal_id: string
+      title: string
+      notes: string
+      estimated_minutes: number
+      scheduled_date_key: string
+      deliverable: string
+      metric: null
+      status: string
+      is_completed: boolean
+      day_number: number
+      created_at: string
+    }> = []
+    const checkpoints: Array<{
+      id: string
+      task_id: string
+      user_id: string
+      content: string
+      is_completed: boolean
+      position: number
+      created_at: string
+    }> = []
     
     const todayStr = getTodayString()
     console.log(`📅 TODAY: ${todayStr}`)
     
     studyPlan.dailyTasks.forEach(task => {
+      let dateKey: string
       if (task.dayNumber === 1) {
-        var dateKey = todayStr
+        dateKey = todayStr
       } else {
         const daysToAdd = task.dayNumber - 1
         dateKey = addDaysToDateString(todayStr, daysToAdd)

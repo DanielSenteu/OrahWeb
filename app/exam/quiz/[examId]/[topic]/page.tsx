@@ -53,7 +53,7 @@ export default function QuizPage() {
         .eq('exam_id', examId)
         .eq('user_id', user.id)
 
-      // Combine all document texts (prefer documents that mention this topic)
+      // Get relevant documents for this topic
       const relevantDocs = documents?.filter(d => 
         !d.topics || 
         d.topics.length === 0 || 
@@ -63,10 +63,50 @@ export default function QuizPage() {
         )
       ) || documents || []
 
-      const notes = relevantDocs
-        .map(d => d.extracted_text)
-        .filter(Boolean)
-        .join('\n\n---\n\n') || ''
+      // Prepare notes (chunk + summarize if needed)
+      let notes = ''
+      
+      if (relevantDocs.length > 0) {
+        try {
+          // Prepare documents for API
+          const docsForAPI = relevantDocs.map(d => ({
+            name: d.document_name || 'Document',
+            text: d.extracted_text || '',
+          }))
+
+          // Call prepare-topic-notes API to chunk and summarize if needed
+          const prepareRes = await fetch('/api/exam/prepare-topic-notes', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              documents: docsForAPI,
+              topic: decodedTopic,
+            }),
+          })
+
+          if (prepareRes.ok) {
+            const prepareData = await prepareRes.json()
+            notes = prepareData.preparedNotes
+            console.log(`📝 Quiz notes prepared: ${prepareData.wasSummarized ? 'Summarized' : 'Used as-is'} (${prepareData.originalTokens} → ${prepareData.finalTokens} tokens)`)
+          } else {
+            // Fallback: use documents as-is
+            notes = relevantDocs
+              .map(d => d.extracted_text)
+              .filter(Boolean)
+              .join('\n\n---\n\n')
+          }
+        } catch (error) {
+          console.error('Error preparing quiz notes:', error)
+          // Fallback: use documents as-is
+          notes = relevantDocs
+            .map(d => d.extracted_text)
+            .filter(Boolean)
+            .join('\n\n---\n\n')
+        }
+      }
 
       if (!notes) {
         alert('No notes found for this topic. Please upload study materials first.')

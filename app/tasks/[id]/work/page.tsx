@@ -64,7 +64,9 @@ export default function TaskWorkSessionPage() {
   const [examId, setExamId] = useState<string | null>(null)
   const [examTopic, setExamTopic] = useState<string | null>(null)
   const [examNotes, setExamNotes] = useState<string | null>(null)
+  const [structuredNotes, setStructuredNotes] = useState<any>(null)
   const [loadingExamData, setLoadingExamData] = useState(false)
+  const [generatingNotes, setGeneratingNotes] = useState(false)
 
   const [timerState, setTimerState] = useState<TimerState>({
     timeRemaining: 0,
@@ -158,6 +160,156 @@ export default function TaskWorkSessionPage() {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages])
+
+  // Load exam data if this is an exam task
+  useEffect(() => {
+    if (!task?.goal_id) return
+
+    const checkAndLoadExamData = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        // Check if this goal is an exam
+        const { data: goalData } = await supabase
+          .from('user_goals')
+          .select('goal_type, exam_id')
+          .eq('id', task.goal_id)
+          .single()
+
+        if (goalData?.goal_type === 'exam' && goalData.exam_id) {
+          setIsExamTask(true)
+          setExamId(goalData.exam_id)
+          setLoadingExamData(true)
+
+          // Get exam details to find the topic
+          const { data: examData } = await supabase
+            .from('course_exams')
+            .select('exam_name, topics')
+            .eq('id', goalData.exam_id)
+            .eq('user_id', user.id)
+            .single()
+
+          if (examData) {
+            // Extract topic from task title (e.g., "Study: Recursion" -> "Recursion")
+            const topicMatch = task.title.match(/Study:\s*(.+)/i) || task.title.match(/Study\s+(.+)/i)
+            const topic = topicMatch ? topicMatch[1].trim() : examData.topics?.[0] || null
+
+            if (topic) {
+              setExamTopic(topic)
+
+              // Get documents for this exam
+              const { data: documents } = await supabase
+                .from('exam_documents')
+                .select('document_name, extracted_text, topics')
+                .eq('exam_id', goalData.exam_id)
+                .eq('user_id', user.id)
+
+              // Get relevant documents for this topic
+              const relevantDocs = documents
+                ?.filter(d => 
+                  !d.topics || 
+                  d.topics.length === 0 || 
+                  d.topics.some((t: string) => 
+                    t.toLowerCase().includes(topic.toLowerCase()) ||
+                    topic.toLowerCase().includes(t.toLowerCase())
+                  )
+                ) || []
+
+              // Prepare notes (chunk + summarize if needed)
+              if (relevantDocs.length > 0) {
+                try {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  if (session) {
+                    // Prepare documents for API
+                    const docsForAPI = relevantDocs.map(d => ({
+                      name: d.document_name || 'Document',
+                      text: d.extracted_text || '',
+                    }))
+
+                    // Call prepare-topic-notes API to chunk and summarize if needed
+                    const prepareRes = await fetch('/api/exam/prepare-topic-notes', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`,
+                      },
+                      body: JSON.stringify({
+                        documents: docsForAPI,
+                        topic: topic,
+                      }),
+                    })
+
+                    if (prepareRes.ok) {
+                      const prepareData = await prepareRes.json()
+                      const preparedNotes = prepareData.preparedNotes
+                      setExamNotes(preparedNotes)
+                      console.log(`📝 Notes prepared: ${prepareData.wasSummarized ? 'Summarized' : 'Used as-is'} (${prepareData.originalTokens} → ${prepareData.finalTokens} tokens)`)
+
+                      // Generate structured notes if we have content
+                      if (preparedNotes && preparedNotes.length > 100) {
+                        setGeneratingNotes(true)
+                        try {
+                          const notesRes = await fetch('/api/exam/generate-notes', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: `Bearer ${session.access_token}`,
+                            },
+                            body: JSON.stringify({
+                              examId: goalData.exam_id,
+                              topic: topic,
+                              notes: preparedNotes, // Use prepared (possibly summarized) notes
+                            }),
+                          })
+
+                          if (notesRes.ok) {
+                            const notesData = await notesRes.json()
+                            setStructuredNotes(notesData.notes)
+                          }
+                        } catch (error) {
+                          console.error('Error generating structured notes:', error)
+                        } finally {
+                          setGeneratingNotes(false)
+                        }
+                      }
+                    } else {
+                      // Fallback: use documents as-is
+                      const fallbackNotes = relevantDocs
+                        .map(d => `[From ${d.document_name}]\n${d.extracted_text}`)
+                        .join('\n\n---\n\n')
+                      setExamNotes(fallbackNotes)
+                    }
+                  } else {
+                    // Fallback: use documents as-is
+                    const fallbackNotes = relevantDocs
+                      .map(d => `[From ${d.document_name}]\n${d.extracted_text}`)
+                      .join('\n\n---\n\n')
+                    setExamNotes(fallbackNotes)
+                  }
+                } catch (error) {
+                  console.error('Error preparing notes:', error)
+                  // Fallback: use documents as-is
+                  const fallbackNotes = relevantDocs
+                    .map(d => `[From ${d.document_name}]\n${d.extracted_text}`)
+                    .join('\n\n---\n\n')
+                  setExamNotes(fallbackNotes)
+                }
+              } else {
+                setExamNotes(task.notes || 'No notes available for this topic.')
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading exam data:', error)
+      } finally {
+        setLoadingExamData(false)
+      }
+    }
+
+    checkAndLoadExamData()
+  }, [task, supabase])
 
   const loadTask = async () => {
     try {
@@ -685,11 +837,111 @@ export default function TaskWorkSessionPage() {
                     <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
                     <p>Loading notes...</p>
                   </div>
+                ) : generatingNotes ? (
+                  <div className="exam-notes-loading">
+                    <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
+                    <p>Generating structured notes...</p>
+                  </div>
                 ) : (
                   <>
                     <div className="exam-notes-content">
                       <div className="exam-notes-text">
-                        {examNotes ? (
+                        {structuredNotes ? (
+                          <div style={{ 
+                            lineHeight: '1.6',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.9375rem',
+                            maxHeight: '500px',
+                            overflowY: 'auto',
+                            padding: '1rem',
+                            background: 'var(--bg-secondary)',
+                            borderRadius: '8px',
+                          }}>
+                            <h4 style={{ 
+                              color: 'var(--text-primary)', 
+                              marginTop: 0, 
+                              marginBottom: '1rem',
+                              fontSize: '1.125rem',
+                              fontWeight: 600
+                            }}>
+                              {structuredNotes.title || `Study Notes: ${examTopic}`}
+                            </h4>
+                            
+                            {structuredNotes.summary && (
+                              <div style={{ 
+                                marginBottom: '1.5rem',
+                                padding: '0.75rem',
+                                background: 'rgba(6, 182, 212, 0.1)',
+                                borderRadius: '6px',
+                                borderLeft: '3px solid var(--primary-cyan)'
+                              }}>
+                                <strong>Overview:</strong> {structuredNotes.summary}
+                              </div>
+                            )}
+
+                            {structuredNotes.sections && structuredNotes.sections.map((section: any, idx: number) => (
+                              <div key={idx} style={{ marginBottom: '1.5rem' }}>
+                                <h5 style={{ 
+                                  color: 'var(--text-primary)', 
+                                  marginBottom: '0.5rem',
+                                  fontSize: '1rem',
+                                  fontWeight: 600
+                                }}>
+                                  {section.title}
+                                </h5>
+                                <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                                  {section.content && section.content.map((point: string, pIdx: number) => (
+                                    <li key={pIdx} style={{ marginBottom: '0.5rem' }}>
+                                      {point}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+
+                            {structuredNotes.definitions && structuredNotes.definitions.length > 0 && (
+                              <div style={{ marginBottom: '1.5rem' }}>
+                                <h5 style={{ 
+                                  color: 'var(--text-primary)', 
+                                  marginBottom: '0.5rem',
+                                  fontSize: '1rem',
+                                  fontWeight: 600
+                                }}>
+                                  Key Definitions
+                                </h5>
+                                {structuredNotes.definitions.map((def: any, idx: number) => (
+                                  <div key={idx} style={{ 
+                                    marginBottom: '0.75rem',
+                                    padding: '0.5rem',
+                                    background: 'var(--bg-elevated)',
+                                    borderRadius: '4px'
+                                  }}>
+                                    <strong>{def.term}:</strong> {def.definition}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {structuredNotes.keyTakeaways && structuredNotes.keyTakeaways.length > 0 && (
+                              <div style={{ 
+                                marginTop: '1.5rem',
+                                padding: '0.75rem',
+                                background: 'rgba(168, 85, 247, 0.1)',
+                                borderRadius: '6px',
+                                borderLeft: '3px solid var(--primary-purple)'
+                              }}>
+                                <strong>Key Takeaways:</strong>
+                                <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.25rem' }}>
+                                  {structuredNotes.keyTakeaways.map((takeaway: string, idx: number) => (
+                                    <li key={idx} style={{ marginBottom: '0.25rem' }}>
+                                      {takeaway}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ) : examNotes ? (
                           <div style={{ 
                             whiteSpace: 'pre-wrap', 
                             lineHeight: '1.6',

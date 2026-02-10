@@ -66,18 +66,42 @@ export async function POST(req: Request) {
       apiKey: process.env.OPENAI_API_KEY || '',
     })
 
-    // Generate 10 quiz questions
-    const prompt = `Generate 10 multiple-choice quiz questions about the topic "${topic}" based on these study notes:
+    // Generate 10 quiz questions with enhanced quality
+    const prompt = `You are an expert exam question writer. Generate 10 high-quality multiple-choice quiz questions about the topic "${topic}" based on these comprehensive study notes:
 
 ${notes}
 
-Requirements:
-- Each question should have exactly 4 answer options (A, B, C, D)
-- Only one answer should be correct
-- Questions should test understanding, not just memorization
-- Include explanations for why the correct answer is right
-- Include explanations for why wrong answers are wrong
-- Questions should be of varying difficulty (some easy, some medium, some hard)
+CRITICAL QUALITY REQUIREMENTS:
+
+1. **Question Quality:**
+   - Test DEEP UNDERSTANDING, not just memorization
+   - Include application questions (e.g., "Given X scenario, what would happen?")
+   - Include analysis questions (e.g., "Which approach is best and why?")
+   - Mix conceptual and problem-solving questions
+   - Questions should be challenging but fair
+
+2. **Answer Options:**
+   - Each question must have exactly 4 options (A, B, C, D)
+   - Only ONE answer is correct
+   - Wrong answers should be plausible (common mistakes, misconceptions, or related concepts)
+   - Avoid obviously wrong answers (e.g., "None of the above" only if truly appropriate)
+
+3. **Difficulty Distribution:**
+   - 2-3 easy questions (basic recall, definitions)
+   - 4-5 medium questions (application, analysis)
+   - 2-3 hard questions (synthesis, complex scenarios)
+
+4. **Explanations:**
+   - Correct answer explanation: Explain WHY it's correct with reference to the study materials
+   - Incorrect answer explanation: Explain WHY each wrong answer is wrong and what the correct answer is
+   - Include key concepts students should review if they got it wrong
+
+5. **Question Types to Include:**
+   - Definition/Concept questions
+   - Application/Scenario questions
+   - Problem-solving questions
+   - Comparison questions ("Which is better and why?")
+   - "What would happen if..." questions
 
 Return a JSON array with this exact structure:
 [
