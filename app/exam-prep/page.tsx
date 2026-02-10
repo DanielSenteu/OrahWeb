@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Navigation from '@/components/layout/Navigation'
@@ -16,14 +16,21 @@ type Message = {
 
 export default function ExamPrepPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const supabase = createClient()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
-  // Get examId and courseId from URL params
-  const examIdFromUrl = searchParams.get('examId')
-  const courseIdFromUrl = searchParams.get('courseId')
+  // Get examId and courseId from URL params (client-side only)
+  const [examIdFromUrl, setExamIdFromUrl] = useState<string | null>(null)
+  const [courseIdFromUrl, setCourseIdFromUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      setExamIdFromUrl(url.searchParams.get('examId'))
+      setCourseIdFromUrl(url.searchParams.get('courseId'))
+    }
+  }, [])
 
   const [messages, setMessages] = useState<Message[]>([
     {
