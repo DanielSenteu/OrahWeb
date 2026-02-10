@@ -49,7 +49,7 @@ export default function QuizPage() {
       // Get exam documents for this topic
       const { data: documents } = await supabase
         .from('exam_documents')
-        .select('extracted_text, topics')
+        .select('document_name, extracted_text, topics')
         .eq('exam_id', examId)
         .eq('user_id', user.id)
 
