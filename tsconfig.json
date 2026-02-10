@@ -31,6 +31,7 @@
     "**/*.mts"
   ],
   "exclude": [
+    "EXAM_PREP_EDGE_FUNCTION_COMPLETE.ts",
     "node_modules",
     "supabase/functions",
     "EDGE_FUNCTION_MAIN_COMPLETE.ts",
