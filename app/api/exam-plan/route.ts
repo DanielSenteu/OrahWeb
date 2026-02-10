@@ -19,7 +19,9 @@ export async function POST(req: Request) {
       hoursPerDay,
       examDate,
       studyMaterials,
-      documents = [] // Array of {name, type, text}
+      documents = [], // Array of {name, type, text}
+      examId = null, // Optional exam ID from course context
+      courseId = null // Optional course ID
     } = await req.json()
     
     if (!courseName || !totalChapters || !hoursPerDay || !examDate || !userId) {
@@ -68,8 +70,8 @@ export async function POST(req: Request) {
           examDate,
           studyMaterials: allNotes, // Combined notes from all documents
           documents: documents, // Pass documents for topic extraction
-          examId: examId || null, // Pass examId if provided
-          courseId: courseId || null, // Pass courseId if provided
+          examId: examId || null, // Pass examId if provided (from request body)
+          courseId: courseId || null, // Pass courseId if provided (from request body)
         }),
     })
 
