@@ -362,20 +362,12 @@ export default function TaskWorkSessionPage() {
                 // No documents, but still show exam flow with task notes
                 setExamNotes(task.notes || 'No notes available for this topic yet. Study materials will appear here once uploaded.')
               }
-            } else {
-              // No documents at all, but still show exam flow
-              setExamNotes(task.notes || 'No notes available for this topic yet. Study materials will appear here once uploaded.')
-            }
           } else {
-            // No exam data, but topic is set - still show exam flow
+            // Topic not found, but it's an exam task - still show exam flow
+            console.warn('⚠️ Exam task but no topic found, using task title')
+            setExamTopic(task.title.replace(/^Study\s*/i, '').trim() || 'Exam Topic')
             setExamNotes(task.notes || 'No notes available for this topic yet.')
           }
-        } else {
-          // Topic not found, but it's an exam task - still show exam flow
-          console.warn('⚠️ Exam task but no topic found, using task title')
-          setExamTopic(task.title.replace(/^Study\s*/i, '').trim() || 'Exam Topic')
-          setExamNotes(task.notes || 'No notes available for this topic yet.')
-        }
       } else {
         // Goal is exam type but no exam_id - still treat as exam
         console.log('⚠️ Exam goal but no exam_id, treating as exam task anyway')
