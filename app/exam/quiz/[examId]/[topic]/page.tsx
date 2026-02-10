@@ -43,6 +43,13 @@ export default function QuizPage() {
         return
       }
 
+      // Get session token first
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push('/login')
+        return
+      }
+
       // Decode topic from URL
       const decodedTopic = decodeURIComponent(topic)
 
@@ -111,13 +118,6 @@ export default function QuizPage() {
       if (!notes) {
         alert('No notes found for this topic. Please upload study materials first.')
         router.back()
-        return
-      }
-
-      // Get session token
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push('/login')
         return
       }
 
