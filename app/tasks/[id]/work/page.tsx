@@ -1123,7 +1123,7 @@ export default function TaskWorkSessionPage() {
               </div>
             </div>
           ) : (
-            <>
+            <div className="work-content">
               {/* Left Column - Timer & Checkpoints */}
               <div className="work-left">
             {/* Timer Card */}
@@ -1296,7 +1296,7 @@ export default function TaskWorkSessionPage() {
             </div>
             )}
           </div>
-            </>
+            </div>
           )}
         </div>
       </div>
