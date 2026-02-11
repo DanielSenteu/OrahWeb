@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS exam_documents (
 );
 
 -- Quiz questions for exam topics
-CREATE TABLE IF NOT EXISTS exam_quiz_questions (
+CREATE TABLE IF NOT EXISTS exam_quiz_uestions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   exam_id UUID NOT NULL REFERENCES course_exams(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,

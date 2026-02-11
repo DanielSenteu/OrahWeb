@@ -1296,10 +1296,9 @@ export default function TaskWorkSessionPage() {
             </div>
             )}
           </div>
-            </div>
+        </div>
           )}
         </div>
-      </div>
 
       {/* End Early Modal */}
       {showEndEarlyModal && (
