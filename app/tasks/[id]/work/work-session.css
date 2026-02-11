@@ -76,12 +76,22 @@
   animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
 }
 
-.work-left, .exam-notes-card {
+.work-left {
   background: var(--card-bg);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
+}
+
+.exam-notes-card {
+  background: linear-gradient(135deg, rgba(26, 29, 38, 0.6), rgba(19, 21, 28, 0.8));
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 2.5rem;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(40px);
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .exam-notes-header {
@@ -116,7 +126,27 @@
 
 .exam-notes-text {
   color: var(--text-secondary);
-  line-height: 1.6;
+  line-height: 1.8;
+  font-size: 1rem;
+}
+
+.exam-notes-text h4,
+.exam-notes-text h5 {
+  color: var(--text-primary);
+  font-family: var(--font-syne), sans-serif;
+  margin-top: 0;
+}
+
+.exam-notes-text h4 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.exam-notes-text h5 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
 }
 
 .exam-notes-actions {
