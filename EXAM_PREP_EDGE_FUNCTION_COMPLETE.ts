@@ -683,6 +683,11 @@ CRITICAL RULES - FOLLOW EXACTLY:
 - If you only cover chapters 1-3 when totalChapters = 5, the plan is INVALID
 - **With limited time (${daysAvailable} days), you MUST create multiple tasks per day if needed to cover all ${totalChapters} chapters**
 
+**NO DUPLICATES - NO GAPS:**
+- Each topic/chapter should appear EXACTLY ONCE in the learning phase (do not repeat the same topic on different days)
+- Every chapter/topic must be covered - no gaps
+- Review days can revisit topics, but initial learning should be one pass with full coverage
+
 Return ONLY valid JSON with the complete study plan.`
 
     const planResponse = await fetch(OPENAI_URL, {

@@ -186,15 +186,13 @@ export default function TaskWorkSessionPage() {
           console.log('✅ Exam task detected:', { examId: goalData?.exam_id, goalType: goalData?.goal_type, summary: goalData?.summary })
           setIsExamTask(true)
           
-          // Try to get exam_id from goal, or find exam by matching summary
           let examIdToUse = goalData?.exam_id
           
+          // Fallback 1: Match goal summary to exam_name
           if (!examIdToUse && goalData?.summary) {
-            // Extract exam name from summary (e.g., "Exam: RAT Quiz #1" -> "RAT Quiz #1")
             const examNameMatch = goalData.summary.match(/Exam:\s*(.+)/i)
             if (examNameMatch) {
               const examName = examNameMatch[1].trim()
-              // Try to find exam by name
               const { data: examMatch } = await supabase
                 .from('course_exams')
                 .select('id')
@@ -202,16 +200,59 @@ export default function TaskWorkSessionPage() {
                 .ilike('exam_name', `%${examName}%`)
                 .limit(1)
                 .maybeSingle()
-              
-              if (examMatch) {
-                examIdToUse = examMatch.id
-                console.log('✅ Found exam by name match:', examIdToUse)
-              }
+              if (examMatch) examIdToUse = examMatch.id
             }
+          }
+          
+          // Fallback 2: Find exam by task title matching - get exams that have documents
+          if (!examIdToUse) {
+            const { data: examsWithDocs } = await supabase
+              .from('exam_documents')
+              .select('exam_id')
+              .eq('user_id', user.id)
+            const examIdsWithDocs = [...new Set((examsWithDocs || []).map((r: { exam_id: string }) => r.exam_id))]
+            if (examIdsWithDocs.length > 0) {
+              const { data: examsData } = await supabase
+                .from('course_exams')
+                .select('id, exam_name, topics')
+                .eq('user_id', user.id)
+                .in('id', examIdsWithDocs)
+              const taskTitleLower = task.title.toLowerCase()
+              const taskWords = taskTitleLower.split(/\s+/).filter((w: string) => w.length > 2)
+              let bestExam = null
+              let bestScore = 0
+              for (const ex of examsData || []) {
+                let score = 0
+                const examNameLower = (ex.exam_name || '').toLowerCase()
+                const topicsLower = (ex.topics || []).map((t: string) => t.toLowerCase())
+                for (const w of taskWords) {
+                  if (examNameLower.includes(w)) score += 2
+                  if (topicsLower.some((t: string) => t.includes(w) || w.includes(t))) score += 3
+                }
+                if (score > bestScore) { bestScore = score; bestExam = ex }
+              }
+              if (bestExam) examIdToUse = bestExam.id
+              else if (examIdsWithDocs.length === 1) examIdToUse = examIdsWithDocs[0]
+            }
+          }
+          
+          // Fallback 3: Most recent exam with documents
+          if (!examIdToUse) {
+            const { data: recentDoc } = await supabase
+              .from('exam_documents')
+              .select('exam_id')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            if (recentDoc) examIdToUse = recentDoc.exam_id
           }
           
           if (examIdToUse) {
             setExamId(examIdToUse)
+            if (!goalData?.exam_id) {
+              supabase.from('user_goals').update({ exam_id: examIdToUse }).eq('id', task.goal_id).eq('user_id', user.id)
+            }
           }
           
           setLoadingExamData(true)
@@ -256,111 +297,34 @@ export default function TaskWorkSessionPage() {
             console.log('✅ Exam topic set:', topic)
             setExamTopic(topic)
 
-              // Get documents for this exam (if examId is available)
-              let documents = null
-              if (examIdToUse) {
-                const { data: docs } = await supabase
-                  .from('exam_documents')
-                  .select('document_name, extracted_text, topics')
-                  .eq('exam_id', examIdToUse)
-                  .eq('user_id', user.id)
-                
-                documents = docs
-              }
-
-              // Get relevant documents for this topic
-              const relevantDocs = documents
-                ?.filter(d => 
-                  !d.topics || 
-                  d.topics.length === 0 || 
-                  d.topics.some((t: string) => 
-                    t.toLowerCase().includes(topic.toLowerCase()) ||
-                    topic.toLowerCase().includes(t.toLowerCase())
-                  )
-                ) || []
-
-              // Prepare notes (chunk + summarize if needed)
-              if (relevantDocs && relevantDocs.length > 0) {
-                try {
-                  const { data: { session } } = await supabase.auth.getSession()
-                  if (session) {
-                    // Prepare documents for API
-                    const docsForAPI = relevantDocs.map(d => ({
-                      name: d.document_name || 'Document',
-                      text: d.extracted_text || '',
-                    }))
-
-                    // Call prepare-topic-notes API to chunk and summarize if needed
-                    const prepareRes = await fetch('/api/exam/prepare-topic-notes', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${session.access_token}`,
-                      },
-                      body: JSON.stringify({
-                        documents: docsForAPI,
-                        topic: topic,
-                      }),
-                    })
-
-                    if (prepareRes.ok) {
-                      const prepareData = await prepareRes.json()
-                      const preparedNotes = prepareData.preparedNotes
-                      setExamNotes(preparedNotes)
-                      console.log(`📝 Notes prepared: ${prepareData.wasSummarized ? 'Summarized' : 'Used as-is'} (${prepareData.originalTokens} → ${prepareData.finalTokens} tokens)`)
-
-                      // Generate structured notes if we have content
-                      if (preparedNotes && preparedNotes.length > 100) {
-                        setGeneratingNotes(true)
-                        try {
-                          const notesRes = await fetch('/api/exam/generate-notes', {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              Authorization: `Bearer ${session.access_token}`,
-                            },
-                            body: JSON.stringify({
-                              examId: examIdToUse,
-                              topic: topic,
-                              notes: preparedNotes, // Use prepared (possibly summarized) notes
-                            }),
-                          })
-
-                          if (notesRes.ok) {
-                            const notesData = await notesRes.json()
-                            setStructuredNotes(notesData.notes)
-                          }
-                        } catch (error) {
-                          console.error('Error generating structured notes:', error)
-                        } finally {
-                          setGeneratingNotes(false)
-                        }
-                      }
-                    } else {
-                      // Fallback: use documents as-is
-                      const fallbackNotes = relevantDocs
-                        .map(d => `[From ${d.document_name}]\n${d.extracted_text}`)
-                        .join('\n\n---\n\n')
-                      setExamNotes(fallbackNotes)
-                    }
+              setGeneratingNotes(true)
+              try {
+                const { data: { session } } = await supabase.auth.getSession()
+                if (session && examIdToUse) {
+                  const notesRes = await fetch('/api/exam/topic-notes', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify({ examId: examIdToUse, topic }),
+                  })
+                  const notesData = await notesRes.json()
+                  if (notesRes.ok && notesData.structuredNotes) {
+                    setStructuredNotes(notesData.structuredNotes)
+                    if (notesData.preparedNotes) setExamNotes(notesData.preparedNotes)
+                    console.log('📝 Notes loaded:', notesData.fromCache ? 'from cache' : 'generated')
                   } else {
-                    // Fallback: use documents as-is
-                    const fallbackNotes = relevantDocs
-                      .map(d => `[From ${d.document_name}]\n${d.extracted_text}`)
-                      .join('\n\n---\n\n')
-                    setExamNotes(fallbackNotes)
+                    setExamNotes(task.notes || 'No notes available. Re-create your study plan with document uploads to enable notes and quiz.')
                   }
-                } catch (error) {
-                  console.error('Error preparing notes:', error)
-                  // Fallback: use documents as-is
-                  const fallbackNotes = relevantDocs
-                    .map(d => `[From ${d.document_name}]\n${d.extracted_text}`)
-                    .join('\n\n---\n\n')
-                  setExamNotes(fallbackNotes)
+                } else {
+                  setExamNotes(task.notes || 'No notes available. Create a study plan from the course Exams tab with document uploads.')
                 }
-              } else {
-                // No documents, but still show exam flow with task notes
-                setExamNotes(task.notes || 'No notes available for this topic yet. Study materials will appear here once uploaded.')
+              } catch (error) {
+                console.error('Error loading notes:', error)
+                setExamNotes(task.notes || 'Failed to load notes. Please try again.')
+              } finally {
+                setGeneratingNotes(false)
               }
           } else {
             // Topic not found, but it's an exam task - still show exam flow

@@ -219,6 +219,8 @@ export default function ExamPrepPage() {
           text: d.extractedText,
         }))
 
+      const examIdParam = examIdFromUrl || (typeof window !== 'undefined' ? new URL(window.location.href).searchParams.get('examId') : null)
+      const courseIdParam = courseIdFromUrl || (typeof window !== 'undefined' ? new URL(window.location.href).searchParams.get('courseId') : null)
       fetch('/api/exam-plan', {
         method: 'POST',
         headers: {
@@ -235,9 +237,9 @@ export default function ExamPrepPage() {
           hoursPerDay: hours,
           examDate: exam,
           studyMaterials: materials,
-          documents: documentsData, // Send all documents
-          examId: examIdFromUrl || null, // Pass examId if from course context
-          courseId: courseIdFromUrl || null, // Pass courseId if from course context
+          documents: documentsData,
+          examId: examIdParam || null,
+          courseId: courseIdParam || null,
         }),
       }).catch((e) => {
         console.error('Background plan creation error:', e)
