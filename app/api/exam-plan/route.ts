@@ -84,27 +84,7 @@ export async function POST(req: Request) {
 
     console.log('✅ Exam plan created:', data.goalId)
 
-    // If examId is provided (from course context), save documents
-    if (data.examId && Array.isArray(documents) && documents.length > 0) {
-      try {
-        const documentsToInsert = documents.map((doc: any) => ({
-          exam_id: data.examId,
-          user_id: userId,
-          document_name: doc.name || 'Untitled',
-          document_type: doc.type === 'application/pdf' ? 'pdf' : 
-                        doc.type?.startsWith('image/') ? 'image' : 'text',
-          extracted_text: doc.text || '',
-          topics: [], // Will be extracted by edge function
-        }))
-
-        await supabase
-          .from('exam_documents')
-          .insert(documentsToInsert)
-      } catch (docError) {
-        console.error('Error saving exam documents:', docError)
-        // Non-fatal, continue
-      }
-    }
+    // Documents are saved by the edge function (exam_prep) - no duplicate insert here
 
     // Set as active goal
     if (data.success && data.goalId) {

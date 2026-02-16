@@ -770,9 +770,9 @@ export default function CourseDashboardPage() {
                           </span>
                         </div>
                         <div className="exam-actions">
-                          {exam.hasPlan && exam.firstTaskId ? (
+                          {exam.hasPlan ? (
                             <Link 
-                              href={`/tasks/${exam.firstTaskId}/work`}
+                              href={`/courses/${courseId}/exams/${exam.id}/study`}
                               className="btn-exam-action"
                               style={{
                                 background: 'linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-pink) 100%)',
