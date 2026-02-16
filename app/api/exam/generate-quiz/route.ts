@@ -2,6 +2,57 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
+/** GET ?examId=X&topic=Y - Returns cached questions instantly if they exist */
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const examId = searchParams.get('examId')
+    const topic = searchParams.get('topic')
+    if (!examId || !topic) {
+      return NextResponse.json({ error: 'examId and topic required' }, { status: 400 })
+    }
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+    if (!authHeader) return NextResponse.json({ error: 'Missing auth token' }, { status: 401 })
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: authHeader } } }
+    )
+
+    const { data: exam } = await supabase
+      .from('course_exams')
+      .select('id, user_id')
+      .eq('id', examId)
+      .single()
+    if (!exam) return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
+
+    const { data: existing } = await supabase
+      .from('exam_quiz_questions')
+      .select('*')
+      .eq('exam_id', examId)
+      .eq('topic', decodeURIComponent(topic))
+      .eq('user_id', exam.user_id)
+
+    if (existing && existing.length >= 10) {
+      return NextResponse.json({
+        questions: existing.slice(0, 10).map(q => ({
+          id: q.id,
+          question_text: q.question_text,
+          options: q.options,
+          correct_answer_id: q.correct_answer_id,
+          explanation: q.explanation,
+          incorrect_explanation: q.incorrect_explanation,
+        })),
+        fromCache: true,
+      })
+    }
+    return NextResponse.json({ error: 'No cached questions', questions: [] }, { status: 404 })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message }, { status: 500 })
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { examId, topic, notes } = await req.json()

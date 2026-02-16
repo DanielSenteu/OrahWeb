@@ -52,81 +52,55 @@ export default function QuizPage() {
 
       // Decode topic from URL
       const decodedTopic = decodeURIComponent(topic)
+      const auth = `Bearer ${session.access_token}`
 
-      // Get exam documents for this topic
-      const { data: documents } = await supabase
-        .from('exam_documents')
-        .select('document_name, extracted_text, topics')
-        .eq('exam_id', examId)
-        .eq('user_id', user.id)
-
-      // Get relevant documents for this topic
-      const relevantDocs = documents?.filter(d => 
-        !d.topics || 
-        d.topics.length === 0 || 
-        d.topics.some((t: string) => 
-          t.toLowerCase().includes(decodedTopic.toLowerCase()) ||
-          decodedTopic.toLowerCase().includes(t.toLowerCase())
-        )
-      ) || documents || []
-
-      // Prepare notes (chunk + summarize if needed)
-      let notes = ''
-      
-      if (relevantDocs.length > 0) {
-        try {
-          // Prepare documents for API
-          const docsForAPI = relevantDocs.map(d => ({
-            name: d.document_name || 'Document',
-            text: d.extracted_text || '',
-          }))
-
-          // Call prepare-topic-notes API to chunk and summarize if needed
-          const prepareRes = await fetch('/api/exam/prepare-topic-notes', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              documents: docsForAPI,
-              topic: decodedTopic,
-            }),
-          })
-
-          if (prepareRes.ok) {
-            const prepareData = await prepareRes.json()
-            notes = prepareData.preparedNotes
-            console.log(`📝 Quiz notes prepared: ${prepareData.wasSummarized ? 'Summarized' : 'Used as-is'} (${prepareData.originalTokens} → ${prepareData.finalTokens} tokens)`)
-          } else {
-            // Fallback: use documents as-is
-            notes = relevantDocs
-              .map(d => d.extracted_text)
-              .filter(Boolean)
-              .join('\n\n---\n\n')
-          }
-        } catch (error) {
-          console.error('Error preparing quiz notes:', error)
-          // Fallback: use documents as-is
-          notes = relevantDocs
-            .map(d => d.extracted_text)
-            .filter(Boolean)
-            .join('\n\n---\n\n')
+      // 1. Try cached quiz questions first (instant!)
+      const getRes = await fetch(
+        `/api/exam/generate-quiz?examId=${examId}&topic=${encodeURIComponent(decodedTopic)}`,
+        { headers: { Authorization: auth } }
+      )
+      if (getRes.ok) {
+        const getData = await getRes.json()
+        if (getData.questions?.length >= 10) {
+          setQuestions(getData.questions)
+          setLoading(false)
+          return
         }
       }
 
+      // 2. No cache - get notes from topic-notes (cached or generated), then generate quiz
+      let notes = ''
+      const notesRes = await fetch(
+        `/api/exam/topic-notes?examId=${examId}&topic=${encodeURIComponent(decodedTopic)}`,
+        { headers: { Authorization: auth } }
+      )
+      const notesData = notesRes.ok ? await notesRes.json() : {}
+      if (notesData.preparedNotes) {
+        notes = notesData.preparedNotes
+      }
+      if (!notes) {
+        const postNotesRes = await fetch('/api/exam/topic-notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: auth },
+          body: JSON.stringify({ examId, topic: decodedTopic }),
+        })
+        if (postNotesRes.ok) {
+          const postNotesData = await postNotesRes.json()
+          notes = postNotesData.preparedNotes || ''
+        }
+      }
       if (!notes) {
         alert('No notes found for this topic. Please upload study materials first.')
         router.back()
         return
       }
 
-      // Generate or fetch quiz questions
+      // Generate quiz (saves to DB for next time)
       const res = await fetch('/api/exam/generate-quiz', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: auth,
         },
         body: JSON.stringify({
           examId,

@@ -320,39 +320,37 @@ export default function TaskWorkSessionPage() {
             console.log('✅ Exam topic set:', topic)
             setExamTopic(topic)
 
-              const loadNotesFromDocs = async (eid: string) => {
-                const { data: docs } = await supabase
-                  .from('exam_documents')
-                  .select('document_name, extracted_text, topics')
-                  .eq('exam_id', eid)
-                  .eq('user_id', user.id)
-                const relevant = (docs || []).filter(d =>
-                  !d.topics || d.topics.length === 0 ||
-                  d.topics.some((t: string) =>
-                    t.toLowerCase().includes(topic.toLowerCase()) ||
-                    topic.toLowerCase().includes(t.toLowerCase())
-                  )
-                )
-                if (relevant.length === 0 || !relevant.some(d => d.extracted_text && d.extracted_text.length > 50)) return null
-                const docsForAPI = relevant.map(d => ({ name: d.document_name || 'Document', text: d.extracted_text || '' }))
+              const loadNotesWithCache = async (eid: string) => {
                 const { data: { session } } = await supabase.auth.getSession()
                 if (!session) return null
-                const prepRes = await fetch('/api/exam/prepare-topic-notes', {
+                const auth = `Bearer ${session.access_token}`
+                // 1. Try cache first (instant if saved)
+                const getRes = await fetch(
+                  `/api/exam/topic-notes?examId=${eid}&topic=${encodeURIComponent(topic)}`,
+                  { headers: { Authorization: auth } }
+                )
+                const getData = await getRes.json()
+                if (getRes.ok && (getData.structuredNotes || getData.preparedNotes)) {
+                  return {
+                    structuredNotes: getData.structuredNotes,
+                    preparedNotes: getData.preparedNotes,
+                    fromCache: getData.fromCache,
+                  }
+                }
+                // 2. Not cached - generate and save via topic-notes POST
+                const postRes = await fetch('/api/exam/topic-notes', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-                  body: JSON.stringify({ documents: docsForAPI, topic }),
+                  headers: { 'Content-Type': 'application/json', Authorization: auth },
+                  body: JSON.stringify({ examId: eid, topic }),
                 })
-                if (!prepRes.ok) return null
-                const { preparedNotes } = await prepRes.json()
-                if (!preparedNotes || preparedNotes.length < 50) return null
-                const notesRes = await fetch('/api/exam/generate-notes', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-                  body: JSON.stringify({ examId: eid, topic, notes: preparedNotes }),
-                })
-                if (!notesRes.ok) return null
-                const { notes } = await notesRes.json()
-                return { structuredNotes: notes, preparedNotes }
+                if (!postRes.ok) return null
+                const postData = await postRes.json()
+                if (!postData.structuredNotes && !postData.preparedNotes) return null
+                return {
+                  structuredNotes: postData.structuredNotes,
+                  preparedNotes: postData.preparedNotes,
+                  fromCache: false,
+                }
               }
 
               setGeneratingNotes(true)
@@ -371,13 +369,14 @@ export default function TaskWorkSessionPage() {
                   }
                 }
                 if (eid) {
-                  const result = await loadNotesFromDocs(eid)
+                  const result = await loadNotesWithCache(eid)
                   if (result) {
                     setStructuredNotes(result.structuredNotes)
                     if (result.preparedNotes) setExamNotes(result.preparedNotes)
                     setNeedsDocuments(false)
                     setExamId(eid)
                     if (hasExamColumns && !goalData?.exam_id) supabase.from('user_goals').update({ exam_id: eid }).eq('id', task.goal_id).eq('user_id', user.id)
+                    if (result.fromCache) console.log('📦 Notes loaded from cache')
                   } else {
                     setNeedsDocuments(true)
                     setExamNotes(task.notes || 'No notes available. Add your study documents below.')

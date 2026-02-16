@@ -26,10 +26,14 @@ export async function GET(req: Request) {
     { global: { headers: { Authorization: authHeader } } }
   )
 
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { data: cached } = await supabase
     .from('exam_topic_notes')
     .select('prepared_notes, structured_notes')
     .eq('exam_id', examId)
+    .eq('user_id', user.id)
     .eq('topic', decodeURIComponent(topic))
     .maybeSingle()
 
