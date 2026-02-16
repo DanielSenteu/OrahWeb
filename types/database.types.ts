@@ -11,6 +11,8 @@ export interface Database {
           total_days: number
           daily_minutes_budget: number
           domain: string | null
+          goal_type: string | null
+          exam_id: string | null
           created_at: string
         }
         Insert: {
@@ -21,6 +23,8 @@ export interface Database {
           total_days: number
           daily_minutes_budget: number
           domain?: string | null
+          goal_type?: string | null
+          exam_id?: string | null
           created_at?: string
         }
         Update: {
@@ -31,6 +35,8 @@ export interface Database {
           total_days?: number
           daily_minutes_budget?: number
           domain?: string | null
+          goal_type?: string | null
+          exam_id?: string | null
           created_at?: string
         }
       }

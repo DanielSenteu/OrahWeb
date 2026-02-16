@@ -172,14 +172,26 @@ export default function TaskWorkSessionPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // Check if this goal is an exam
-        const { data: goalData, error: goalError } = await supabase
+        // Check if this goal is an exam (try full columns first; fallback to summary if columns missing → 400)
+        let goalData: { goal_type?: string; exam_id?: string; summary?: string | null } | null = null
+        let goalError: { message?: string } | null = null
+        let res = await supabase
           .from('user_goals')
           .select('goal_type, exam_id, summary')
           .eq('id', task.goal_id)
           .maybeSingle()
+        const hadToFallback = !!res.error
+        if (res.error) {
+          const msg = (res.error?.message || '').toLowerCase()
+          if (msg.includes('column') || msg.includes('does not exist') || msg.includes('undefined')) {
+            res = await supabase.from('user_goals').select('summary').eq('id', task.goal_id).maybeSingle()
+          }
+        }
+        goalData = res.data
+        goalError = res.error
+        const hasExamColumns = !hadToFallback && !res.error
 
-        console.log('🔍 Checking if task is exam:', { goalId: task.goal_id, goalData, goalError })
+        console.log('🔍 Checking if task is exam:', { goalId: task.goal_id, goalData, goalError, hasExamColumns })
 
         // Check if it's an exam task (by goal_type OR by summary containing "Exam:")
         const isExamGoal = goalData?.goal_type === 'exam' || (goalData?.summary && goalData.summary.toLowerCase().startsWith('exam:'))
@@ -260,7 +272,7 @@ export default function TaskWorkSessionPage() {
           
           if (examIdToUse) {
             setExamId(examIdToUse)
-            if (!goalData?.exam_id) {
+            if (hasExamColumns && !goalData?.exam_id) {
               supabase.from('user_goals').update({ exam_id: examIdToUse }).eq('id', task.goal_id).eq('user_id', user.id)
             }
           }
@@ -365,7 +377,7 @@ export default function TaskWorkSessionPage() {
                     if (result.preparedNotes) setExamNotes(result.preparedNotes)
                     setNeedsDocuments(false)
                     setExamId(eid)
-                    if (!goalData?.exam_id) supabase.from('user_goals').update({ exam_id: eid }).eq('id', task.goal_id).eq('user_id', user.id)
+                    if (hasExamColumns && !goalData?.exam_id) supabase.from('user_goals').update({ exam_id: eid }).eq('id', task.goal_id).eq('user_id', user.id)
                   } else {
                     setNeedsDocuments(true)
                     setExamNotes(task.notes || 'No notes available. Add your study documents below.')
