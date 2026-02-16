@@ -110,15 +110,19 @@ export default function QuizPage() {
       })
 
       if (!res.ok) {
-        throw new Error('Failed to generate quiz')
+        const errData = await res.json().catch(() => ({}))
+        const msg = errData?.error || errData?.details || 'Failed to generate quiz'
+        throw new Error(msg)
       }
 
       const data = await res.json()
-      setQuestions(data.questions || [])
+      const qs = data.questions || []
+      if (qs.length === 0) throw new Error('No questions generated')
+      setQuestions(qs)
       setLoading(false)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading quiz:', error)
-      alert('Failed to load quiz. Please try again.')
+      alert(error?.message || 'Failed to load quiz. Please try again.')
       router.back()
     }
   }

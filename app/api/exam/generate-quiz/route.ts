@@ -2,6 +2,29 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
+// Schema has typo exam_quiz_uestions - try both table names
+const QUIZ_TABLES = ['exam_quiz_questions', 'exam_quiz_uestions'] as const
+
+async function getQuizTableName(supabase: ReturnType<typeof createClient>): Promise<string> {
+  for (const table of QUIZ_TABLES) {
+    const { error } = await supabase.from(table).select('id').limit(1)
+    if (!error) return table
+    if (!String(error.message || '').toLowerCase().includes('does not exist')) throw error
+  }
+  return QUIZ_TABLES[0]
+}
+
+async function fetchCachedQuestions(supabase: ReturnType<typeof createClient>, examId: string, topic: string, userId: string) {
+  const table = await getQuizTableName(supabase)
+  const { data, error } = await supabase
+    .from(table)
+    .select('*')
+    .eq('exam_id', examId)
+    .eq('topic', topic)
+    .eq('user_id', userId)
+  return { data: error ? null : data, error }
+}
+
 /** GET ?examId=X&topic=Y - Returns cached questions instantly if they exist */
 export async function GET(req: Request) {
   try {
@@ -27,12 +50,9 @@ export async function GET(req: Request) {
       .single()
     if (!exam) return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
 
-    const { data: existing } = await supabase
-      .from('exam_quiz_questions')
-      .select('*')
-      .eq('exam_id', examId)
-      .eq('topic', decodeURIComponent(topic))
-      .eq('user_id', exam.user_id)
+    const decodedTopic = decodeURIComponent(topic)
+    const { data: existing, error: fetchErr } = await fetchCachedQuestions(supabase, examId, decodedTopic, exam.user_id)
+    if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
 
     if (existing && existing.length >= 10) {
       return NextResponse.json({
@@ -49,6 +69,7 @@ export async function GET(req: Request) {
     }
     return NextResponse.json({ error: 'No cached questions', questions: [] }, { status: 404 })
   } catch (e: any) {
+    console.error('generate-quiz GET error:', e)
     return NextResponse.json({ error: e?.message }, { status: 500 })
   }
 }
@@ -90,9 +111,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
     }
 
+    const quizTable = await getQuizTableName(supabase)
+
     // Check if questions already exist for this topic
     const { data: existingQuestions } = await supabase
-      .from('exam_quiz_questions')
+      .from(quizTable)
       .select('*')
       .eq('exam_id', examId)
       .eq('topic', topic)
@@ -222,7 +245,7 @@ Return a JSON array with this exact structure:
     }))
 
     const { data: insertedQuestions, error: insertError } = await supabase
-      .from('exam_quiz_questions')
+      .from(quizTable)
       .insert(questionsToInsert)
       .select()
 
