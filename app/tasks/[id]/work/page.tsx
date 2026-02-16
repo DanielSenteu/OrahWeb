@@ -311,27 +311,85 @@ export default function TaskWorkSessionPage() {
               setGeneratingNotes(true)
               try {
                 const { data: { session } } = await supabase.auth.getSession()
-                if (session && examIdToUse) {
-                  const notesRes = await fetch('/api/exam/topic-notes', {
+                if (!session) {
+                  setExamNotes(task.notes || 'Please log in to load notes.')
+                  setGeneratingNotes(false)
+                  return
+                }
+                const tryLoadNotes = async (eid: string) => {
+                  const res = await fetch('/api/exam/topic-notes', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
                       Authorization: `Bearer ${session.access_token}`,
                     },
-                    body: JSON.stringify({ examId: examIdToUse, topic }),
+                    body: JSON.stringify({ examId: eid, topic }),
                   })
-                  const notesData = await notesRes.json()
-                  if (notesRes.ok && notesData.structuredNotes) {
-                    setStructuredNotes(notesData.structuredNotes)
-                    if (notesData.preparedNotes) setExamNotes(notesData.preparedNotes)
-                    setNeedsDocuments(false)
-                    console.log('📝 Notes loaded:', notesData.fromCache ? 'from cache' : 'generated')
-                  } else {
-                    setNeedsDocuments(notesRes.status === 404 || (notesData?.error || '').toLowerCase().includes('no documents'))
-                    setExamNotes(task.notes || 'No notes available. Add your study documents below to enable notes and quiz.')
-                  }
+                  const data = await res.json()
+                  return { res, data }
+                }
+                let notesRes: Response
+                let notesData: any
+                if (examIdToUse) {
+                  const out = await tryLoadNotes(examIdToUse)
+                  notesRes = out.res
+                  notesData = out.data
                 } else {
-                  setExamNotes(task.notes || 'No notes available. Create a study plan from the course Exams tab with document uploads.')
+                  notesRes = { ok: false, status: 404 } as unknown as Response
+                  notesData = { error: 'No exam ID' }
+                }
+                if (notesRes.ok && notesData?.structuredNotes) {
+                  setStructuredNotes(notesData.structuredNotes)
+                  if (notesData.preparedNotes) setExamNotes(notesData.preparedNotes)
+                  setNeedsDocuments(false)
+                  if (examIdToUse) setExamId(examIdToUse)
+                  console.log('📝 Notes loaded:', notesData.fromCache ? 'from cache' : 'generated')
+                } else {
+                  if (!examIdToUse || notesRes.status === 404 || (notesData?.error || '').toLowerCase().includes('no documents')) {
+                    const taskLower = task.title.toLowerCase()
+                    const hasEconomicsTerms = /supply|demand|market|equilibrium|micro|economics/.test(taskLower)
+                    const docQuery = hasEconomicsTerms ? '%microeconomics%' : null
+                    if (docQuery) {
+                      const { data: matchingDocs } = await supabase
+                        .from('exam_documents')
+                        .select('exam_id')
+                        .eq('user_id', user.id)
+                        .ilike('document_name', docQuery)
+                        .limit(1)
+                      if (matchingDocs?.[0]?.exam_id) {
+                        const retry = await tryLoadNotes(matchingDocs[0].exam_id)
+                        if (retry.res.ok && retry.data?.structuredNotes) {
+                          setStructuredNotes(retry.data.structuredNotes)
+                          if (retry.data.preparedNotes) setExamNotes(retry.data.preparedNotes)
+                          setNeedsDocuments(false)
+                          setExamId(matchingDocs[0].exam_id)
+                          supabase.from('user_goals').update({ exam_id: matchingDocs[0].exam_id }).eq('id', task.goal_id).eq('user_id', user.id)
+                          setGeneratingNotes(false)
+                          return
+                        }
+                      }
+                    }
+                    const { data: anyDoc } = await supabase
+                      .from('exam_documents')
+                      .select('exam_id')
+                      .eq('user_id', user.id)
+                      .limit(1)
+                      .maybeSingle()
+                    if (anyDoc?.exam_id) {
+                      const retry = await tryLoadNotes(anyDoc.exam_id)
+                      if (retry.res.ok && retry.data?.structuredNotes) {
+                        setStructuredNotes(retry.data.structuredNotes)
+                        if (retry.data.preparedNotes) setExamNotes(retry.data.preparedNotes)
+                        setNeedsDocuments(false)
+                        setExamId(anyDoc.exam_id)
+                        supabase.from('user_goals').update({ exam_id: anyDoc.exam_id }).eq('id', task.goal_id).eq('user_id', user.id)
+                        setGeneratingNotes(false)
+                        return
+                      }
+                    }
+                  }
+                  setNeedsDocuments(true)
+                  setExamNotes(task.notes || 'No notes available. Add your study documents below to enable notes and quiz.')
                 }
               } catch (error) {
                 console.error('Error loading notes:', error)
