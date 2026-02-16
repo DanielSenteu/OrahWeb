@@ -110,10 +110,16 @@ export async function POST(req: Request) {
       text: d.extracted_text || '',
     }))
 
-    // Step 1: Prepare notes (chunk/summarize if needed)
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}` 
-      : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+    // Step 1: Prepare notes - use request origin for internal fetch (avoids localhost/VERCEL_URL issues)
+    let baseUrl = 'http://localhost:3000'
+    try {
+      if (req.headers.get('host')) {
+        const proto = req.headers.get('x-forwarded-proto') || 'https'
+        baseUrl = `${proto}://${req.headers.get('host')}`
+      } else if (process.env.VERCEL_URL) {
+        baseUrl = `https://${process.env.VERCEL_URL}`
+      }
+    } catch (_) {}
     const prepareRes = await fetch(`${baseUrl}/api/exam/prepare-topic-notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader },
@@ -146,17 +152,21 @@ export async function POST(req: Request) {
 
     const { notes: structuredNotes } = await notesRes.json()
 
-    // Step 3: Save to cache
-    await supabase
-      .from('exam_topic_notes')
-      .upsert({
-        exam_id: examId,
-        user_id: user.id,
-        topic,
-        prepared_notes: preparedNotes,
-        structured_notes: structuredNotes || {},
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'exam_id,user_id,topic' })
+    // Step 3: Save to cache (non-blocking - return notes even if cache fails)
+    try {
+      await supabase
+        .from('exam_topic_notes')
+        .upsert({
+          exam_id: examId,
+          user_id: user.id,
+          topic,
+          prepared_notes: preparedNotes,
+          structured_notes: structuredNotes || {},
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'exam_id,user_id,topic' })
+    } catch (cacheErr) {
+      console.warn('Cache save failed (exam_topic_notes may not exist):', cacheErr)
+    }
 
     return NextResponse.json({
       preparedNotes,
