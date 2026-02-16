@@ -67,6 +67,8 @@ export default function TaskWorkSessionPage() {
   const [structuredNotes, setStructuredNotes] = useState<any>(null)
   const [loadingExamData, setLoadingExamData] = useState(false)
   const [generatingNotes, setGeneratingNotes] = useState(false)
+  const [needsDocuments, setNeedsDocuments] = useState(false)
+  const [addingDocuments, setAddingDocuments] = useState(false)
 
   const [timerState, setTimerState] = useState<TimerState>({
     timeRemaining: 0,
@@ -204,13 +206,13 @@ export default function TaskWorkSessionPage() {
             }
           }
           
-          // Fallback 2: Find exam by task title matching - get exams that have documents
+          // Fallback 2: Find exam by task title + document names - get exams that have documents
           if (!examIdToUse) {
-            const { data: examsWithDocs } = await supabase
+            const { data: docsWithExams } = await supabase
               .from('exam_documents')
-              .select('exam_id')
+              .select('exam_id, document_name')
               .eq('user_id', user.id)
-            const examIdsWithDocs = [...new Set((examsWithDocs || []).map((r: { exam_id: string }) => r.exam_id))]
+            const examIdsWithDocs = [...new Set((docsWithExams || []).map((r: { exam_id: string }) => r.exam_id))]
             if (examIdsWithDocs.length > 0) {
               const { data: examsData } = await supabase
                 .from('course_exams')
@@ -229,6 +231,14 @@ export default function TaskWorkSessionPage() {
                   if (examNameLower.includes(w)) score += 2
                   if (topicsLower.some((t: string) => t.includes(w) || w.includes(t))) score += 3
                 }
+                // Also score by document names - e.g. "Microeconomics_Exam_Helper.pdf" for "Supply and Demand" task
+                const docsForExam = (docsWithExams || []).filter((r: { exam_id: string }) => r.exam_id === ex.id)
+                const docNames = docsForExam.map((r: { document_name?: string }) => (r.document_name || '').toLowerCase()).join(' ')
+                for (const w of taskWords) {
+                  if (docNames.includes(w)) score += 4
+                }
+                // Boost if doc name contains subject (e.g. microeconomics) and task has related terms (supply, demand)
+                if ((docNames.includes('micro') || docNames.includes('economics')) && (taskTitleLower.includes('supply') || taskTitleLower.includes('demand') || taskTitleLower.includes('market'))) score += 5
                 if (score > bestScore) { bestScore = score; bestExam = ex }
               }
               if (bestExam) examIdToUse = bestExam.id
@@ -273,11 +283,12 @@ export default function TaskWorkSessionPage() {
           // Extract topic from task title (multiple patterns)
           let topic = null
           const titlePatterns = [
-            /Study:\s*(.+)/i,
-            /Study\s+(.+)/i,
+            /Study:\s*(.+?)(?:\s*-\s*Core|$)/i,
+            /Study\s+(.+?)(?:\s*-\s*Core|$)/i,
             /^(.+?)\s*-\s*Core\s+Concepts/i,
             /^(.+?)\s*-\s*Practice/i,
-            /^(.+?)\s*:\s*Core/i
+            /^(.+?)\s*:\s*Core/i,
+            /Study\s+(.+)/i,
           ]
           
           for (const pattern of titlePatterns) {
@@ -313,9 +324,11 @@ export default function TaskWorkSessionPage() {
                   if (notesRes.ok && notesData.structuredNotes) {
                     setStructuredNotes(notesData.structuredNotes)
                     if (notesData.preparedNotes) setExamNotes(notesData.preparedNotes)
+                    setNeedsDocuments(false)
                     console.log('📝 Notes loaded:', notesData.fromCache ? 'from cache' : 'generated')
                   } else {
-                    setExamNotes(task.notes || 'No notes available. Re-create your study plan with document uploads to enable notes and quiz.')
+                    setNeedsDocuments(notesRes.status === 404 || (notesData?.error || '').toLowerCase().includes('no documents'))
+                    setExamNotes(task.notes || 'No notes available. Add your study documents below to enable notes and quiz.')
                   }
                 } else {
                   setExamNotes(task.notes || 'No notes available. Create a study plan from the course Exams tab with document uploads.')
@@ -888,6 +901,123 @@ export default function TaskWorkSessionPage() {
                         </div>
                       )}
                       
+                      {needsDocuments && examId && (
+                        <div style={{
+                          marginBottom: '2rem',
+                          padding: '1.5rem',
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '12px',
+                        }}>
+                          <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Add study documents</h4>
+                          <p style={{ margin: '0 0 1rem 0', color: 'var(--text-secondary)', fontSize: '0.9375rem' }}>
+                            Upload your PDF or notes to enable notes and quiz for this topic.
+                          </p>
+                          <input
+                            type="file"
+                            accept=".pdf,image/*,.txt"
+                            style={{ display: 'none' }}
+                            id="add-exam-doc-input"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (!file || !examId) return
+                              setAddingDocuments(true)
+                              try {
+                                let text = ''
+                                if (file.type === 'application/pdf') {
+                                  const reader = new FileReader()
+                                  const base64 = await new Promise<string>((res, rej) => {
+                                    reader.onload = () => res(reader.result as string)
+                                    reader.onerror = rej
+                                    reader.readAsDataURL(file)
+                                  })
+                                  const res = await fetch('/api/pdf/extract', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ pdf: base64.split(',')[1] }),
+                                  })
+                                  if (res.ok) {
+                                    const data = await res.json()
+                                    text = data.text || ''
+                                  }
+                                } else if (file.type.startsWith('image/')) {
+                                  const reader = new FileReader()
+                                  const base64 = await new Promise<string>((res, rej) => {
+                                    reader.onload = () => res(reader.result as string)
+                                    reader.onerror = rej
+                                    reader.readAsDataURL(file)
+                                  })
+                                  const res = await fetch('/api/vision/extract', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ image: base64.split(',')[1] }),
+                                  })
+                                  if (res.ok) {
+                                    const data = await res.json()
+                                    text = data.text || ''
+                                  }
+                                } else if (file.type === 'text/plain') {
+                                  text = await file.text()
+                                }
+                                if (!text) throw new Error('Could not extract text')
+                                const { data: { session } } = await supabase.auth.getSession()
+                                if (!session) return
+                                const addRes = await fetch('/api/exam/add-documents', {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify({
+                                    examId,
+                                    documents: [{ name: file.name, text }],
+                                  }),
+                                })
+                                if (!addRes.ok) throw new Error('Failed to add documents')
+                                setNeedsDocuments(false)
+                                setGeneratingNotes(true)
+                                const notesRes = await fetch('/api/exam/topic-notes', {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify({ examId, topic: examTopic }),
+                                })
+                                const notesData = await notesRes.json()
+                                if (notesRes.ok && notesData.structuredNotes) {
+                                  setStructuredNotes(notesData.structuredNotes)
+                                  if (notesData.preparedNotes) setExamNotes(notesData.preparedNotes)
+                                }
+                              } catch (err: any) {
+                                alert(err?.message || 'Failed to add document')
+                              } finally {
+                                setAddingDocuments(false)
+                                if (document.getElementById('add-exam-doc-input') as HTMLInputElement) {
+                                  (document.getElementById('add-exam-doc-input') as HTMLInputElement).value = ''
+                                }
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor="add-exam-doc-input"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              padding: '0.75rem 1.25rem',
+                              background: 'var(--primary-cyan)',
+                              color: 'white',
+                              borderRadius: '8px',
+                              fontWeight: 600,
+                              cursor: addingDocuments ? 'not-allowed' : 'pointer',
+                              opacity: addingDocuments ? 0.7 : 1,
+                            }}
+                          >
+                            {addingDocuments ? 'Processing...' : 'Upload PDF or notes'}
+                          </label>
+                        </div>
+                      )}
                       <div className="exam-notes-text">
                         {structuredNotes ? (
                           <div style={{ 
@@ -1030,11 +1160,11 @@ export default function TaskWorkSessionPage() {
                         borderTop: '1px solid var(--border-subtle)' 
                       }}>
                         <a
-                          href={examId && examTopic ? `/exam/quiz/${examId}/${encodeURIComponent(examTopic)}` : '#'}
+                          href={examId && examTopic && !needsDocuments ? `/exam/quiz/${examId}/${encodeURIComponent(examTopic)}` : '#'}
                           onClick={(e) => {
-                            if (!examId || !examTopic) {
+                            if (!examId || !examTopic || needsDocuments) {
                               e.preventDefault()
-                              alert('Quiz will be available once exam documents are uploaded and processed.')
+                              alert(needsDocuments ? 'Add your study documents above first, then notes and quiz will unlock.' : 'Quiz will be available once exam documents are uploaded.')
                             }
                           }}
                           className="btn-quiz"
@@ -1046,29 +1176,29 @@ export default function TaskWorkSessionPage() {
                             padding: '1.25rem 3rem',
                             fontSize: '1.125rem',
                             fontWeight: 700,
-                            background: examId && examTopic 
+                            background: examId && examTopic && !needsDocuments 
                               ? 'linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-pink) 100%)' 
                               : 'rgba(255, 255, 255, 0.05)',
-                            color: examId && examTopic ? 'white' : 'var(--text-secondary)',
+                            color: examId && examTopic && !needsDocuments ? 'white' : 'var(--text-secondary)',
                             borderRadius: '14px',
                             textDecoration: 'none',
                             transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                            boxShadow: examId && examTopic 
+                            boxShadow: examId && examTopic && !needsDocuments 
                               ? '0 8px 24px -8px rgba(139, 92, 246, 0.5)' 
                               : 'none',
-                            cursor: examId && examTopic ? 'pointer' : 'not-allowed',
-                            opacity: examId && examTopic ? 1 : 0.5,
-                            border: examId && examTopic ? 'none' : '1px solid var(--border-subtle)',
+                            cursor: examId && examTopic && !needsDocuments ? 'pointer' : 'not-allowed',
+                            opacity: examId && examTopic && !needsDocuments ? 1 : 0.5,
+                            border: examId && examTopic && !needsDocuments ? 'none' : '1px solid var(--border-subtle)',
                             minWidth: '280px'
                           }}
                           onMouseEnter={(e) => {
-                            if (examId && examTopic) {
+                            if (examId && examTopic && !needsDocuments) {
                               e.currentTarget.style.transform = 'translateY(-3px)'
                               e.currentTarget.style.boxShadow = '0 12px 32px -8px rgba(139, 92, 246, 0.7)'
                             }
                           }}
                           onMouseLeave={(e) => {
-                            if (examId && examTopic) {
+                            if (examId && examTopic && !needsDocuments) {
                               e.currentTarget.style.transform = 'translateY(0)'
                               e.currentTarget.style.boxShadow = '0 8px 24px -8px rgba(139, 92, 246, 0.5)'
                             }
@@ -1078,7 +1208,7 @@ export default function TaskWorkSessionPage() {
                             <path d="M9 11l3 3L22 4"/>
                             <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
                           </svg>
-                          {examId && examTopic ? 'Start Quiz (10 Questions)' : 'Upload Documents to Enable Quiz'}
+                          {needsDocuments ? 'Add documents above to enable quiz' : examId && examTopic ? 'Start Quiz (10 Questions)' : 'Upload Documents to Enable Quiz'}
                         </a>
                       </div>
                     )}

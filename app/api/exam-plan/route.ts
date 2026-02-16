@@ -44,6 +44,26 @@ export async function POST(req: Request) {
       }
     )
 
+    // SAVE DOCUMENTS FIRST - before edge function - so we never lose them
+    if (examId && Array.isArray(documents) && documents.length > 0) {
+      try {
+        const docsToInsert = documents.map((d: { name?: string; type?: string; text?: string }) => ({
+          exam_id: examId,
+          user_id: userId,
+          document_name: d.name || 'Untitled',
+          document_type: (d.type === 'application/pdf' || d.type?.includes?.('pdf')) ? 'pdf' :
+            (d.type?.startsWith?.('image/') ? 'image' : 'text'),
+          extracted_text: d.text || '',
+          topics: [],
+        }))
+        const { error: saveErr } = await supabase.from('exam_documents').insert(docsToInsert)
+        if (saveErr) console.warn('Document save error:', saveErr)
+        else console.log('✅ Saved', docsToInsert.length, 'documents to exam_documents (before edge fn)')
+      } catch (e) {
+        console.warn('Document save failed:', e)
+      }
+    }
+
     // Combine all document texts with study materials
     const allNotes = [
       studyMaterials || '',
@@ -83,33 +103,6 @@ export async function POST(req: Request) {
     }
 
     console.log('✅ Exam plan created:', data.goalId)
-
-    // Backup: save documents to exam_documents if edge function returned examId
-    const effectiveExamId = data.examId || examId
-    if (effectiveExamId && Array.isArray(documents) && documents.length > 0) {
-      try {
-        const { count } = await supabase
-          .from('exam_documents')
-          .select('*', { count: 'exact', head: true })
-          .eq('exam_id', effectiveExamId)
-          .eq('user_id', userId)
-        if ((count || 0) === 0) {
-          const docsToInsert = documents.map((d: { name?: string; type?: string; text?: string }) => ({
-            exam_id: effectiveExamId,
-            user_id: userId,
-            document_name: d.name || 'Untitled',
-            document_type: (d.type === 'application/pdf' || d.type?.includes('pdf')) ? 'pdf' :
-              (d.type?.startsWith('image/') ? 'image' : 'text'),
-            extracted_text: d.text || '',
-            topics: [],
-          }))
-          await supabase.from('exam_documents').insert(docsToInsert)
-          console.log('✅ Backup: saved', docsToInsert.length, 'documents to exam_documents')
-        }
-      } catch (e) {
-        console.warn('Backup document save failed:', e)
-      }
-    }
 
     // Set as active goal
     if (data.success && data.goalId) {
