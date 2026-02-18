@@ -89,6 +89,21 @@ export default function QuizPage() {
           notes = postNotesData.preparedNotes || ''
         }
       }
+      // Fallback: get notes directly from documents if topic-notes fails
+      if (!notes) {
+        const { data: docs } = await supabase
+          .from('exam_documents')
+          .select('document_name, extracted_text, topics')
+          .eq('exam_id', examId)
+          .eq('user_id', user.id)
+        const relevant = (docs || []).filter(d =>
+          !d.topics?.length || d.topics.some((t: string) =>
+            t.toLowerCase().includes(decodedTopic.toLowerCase()) || decodedTopic.toLowerCase().includes(t.toLowerCase())
+          )
+        )
+        const text = relevant.map(d => d.extracted_text).filter(Boolean).join('\n\n---\n\n')
+        if (text.length > 100) notes = text
+      }
       if (!notes) {
         alert('No notes found for this topic. Please upload study materials first.')
         router.back()

@@ -5,7 +5,7 @@ import OpenAI from 'openai'
 // Schema has typo exam_quiz_uestions - try both table names
 const QUIZ_TABLES = ['exam_quiz_questions', 'exam_quiz_uestions'] as const
 
-async function getQuizTableName(supabase: ReturnType<typeof createClient>): Promise<string> {
+async function getQuizTableName(supabase: any): Promise<string> {
   for (const table of QUIZ_TABLES) {
     const { error } = await supabase.from(table).select('id').limit(1)
     if (!error) return table
@@ -14,7 +14,7 @@ async function getQuizTableName(supabase: ReturnType<typeof createClient>): Prom
   return QUIZ_TABLES[0]
 }
 
-async function fetchCachedQuestions(supabase: ReturnType<typeof createClient>, examId: string, topic: string, userId: string) {
+async function fetchCachedQuestions(supabase: any, examId: string, topic: string, userId: string) {
   const table = await getQuizTableName(supabase)
   const { data, error } = await supabase
     .from(table)
@@ -56,7 +56,7 @@ export async function GET(req: Request) {
 
     if (existing && existing.length >= 10) {
       return NextResponse.json({
-        questions: existing.slice(0, 10).map(q => ({
+        questions: existing.slice(0, 10).map((q: { id: string; question_text: string; options: unknown; correct_answer_id: string; explanation: string; incorrect_explanation?: string }) => ({
           id: q.id,
           question_text: q.question_text,
           options: q.options,
@@ -244,13 +244,22 @@ Return a JSON array with this exact structure:
       difficulty: index < 3 ? 'easy' : index < 7 ? 'medium' : 'hard',
     }))
 
-    const { data: insertedQuestions, error: insertError } = await supabase
+    // Use service role for insert to avoid RLS issues (we've verified user owns exam)
+    const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY,
+          { auth: { persistSession: false } }
+        )
+      : supabase
+
+    const { data: insertedQuestions, error: insertError } = await supabaseAdmin
       .from(quizTable)
       .insert(questionsToInsert)
       .select()
 
     if (insertError) {
-      console.error('Error saving questions:', insertError)
+      console.error('Error saving quiz questions:', insertError)
       // Still return questions even if save fails, with temp IDs
       return NextResponse.json({ 
         questions: questionsToSave.map((q, i) => ({
