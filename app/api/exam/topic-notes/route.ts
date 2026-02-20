@@ -102,7 +102,7 @@ export async function POST(req: Request) {
     const topicKeywords = topic
       .toLowerCase()
       .split(/[\s:,\-\/]+/)
-      .filter(w => w.length > 3 && !STOP_WORDS.has(w))
+      .filter((w: string) => w.length > 3 && !STOP_WORDS.has(w))
 
     const relevantDocs = (documents || []).filter(d => {
       // If document has stored topic tags, use those for filtering
