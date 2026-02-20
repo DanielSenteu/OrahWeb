@@ -104,7 +104,8 @@ export async function POST(req: Request) {
       .split(/[\s:,\-\/]+/)
       .filter((w: string) => w.length > 3 && !STOP_WORDS.has(w))
 
-    const relevantDocs = (documents || []).filter(d => {
+    type ExamDoc = { document_name: string | null; extracted_text: string | null; topics: string[] | null }
+    const relevantDocs = (documents || []).filter((d: ExamDoc) => {
       // If document has stored topic tags, use those for filtering
       if (d.topics && d.topics.length > 0) {
         return d.topics.some((t: string) =>
@@ -115,7 +116,7 @@ export async function POST(req: Request) {
       // No topic tags — fall back to keyword matching against document text
       if (topicKeywords.length === 0) return true // No meaningful keywords, include document
       const docText = (d.extracted_text || '').toLowerCase()
-      return topicKeywords.some(kw => docText.includes(kw))
+      return topicKeywords.some((kw: string) => docText.includes(kw))
     })
 
     if (relevantDocs.length === 0) {
@@ -124,7 +125,7 @@ export async function POST(req: Request) {
       }, { status: 404 })
     }
 
-    const docsForAPI = relevantDocs.map(d => ({
+    const docsForAPI = relevantDocs.map((d: ExamDoc) => ({
       name: d.document_name || 'Document',
       text: d.extracted_text || '',
     }))
