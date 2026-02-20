@@ -1,168 +1,180 @@
 @import "tailwindcss";
 
-/* ============================================
-   ORAH – Light Theme Design System
-   Clean, minimal UI inspired by ChatGPT light
-   ============================================ */
+/* CRITICAL: Force scrolling to always work on every page */
+html {
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  scroll-behavior: auto !important;
+  height: 100%;
+}
+
+body {
+  overflow-y: visible !important;
+  overflow-x: hidden !important;
+  min-height: 100vh;
+  height: auto !important;
+  max-height: none !important;
+  position: relative;
+  background: var(--background-dark);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mobile: Add padding for bottom navigation + progress bar */
+@media (max-width: 767px) {
+  body {
+    padding-bottom: 140px; /* Bottom nav (70px) + Progress bar (~70px) */
+  }
+}
+
+/* Safe area for devices with notches (iPhone X+) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  @media (max-width: 767px) {
+    body {
+      padding-bottom: calc(140px + env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* Ensure main containers never prevent scrolling */
+#__next {
+  min-height: 100vh;
+  height: auto !important;
+  overflow: visible !important;
+  position: relative;
+}
+
+/* Mobile: Ensure top nav doesn't block content */
+@media (max-width: 767px) {
+  #__next {
+    padding-top: 0 !important;
+  }
+}
 
 :root {
-  /* Backgrounds */
-  --bg-primary:    #FFFFFF;
-  --bg-secondary:  #F9F9F9;
-  --bg-tertiary:   #F3F4F6;
-  --bg-hover:      #F3F4F6;
-
-  /* Surfaces / Cards */
-  --surface:        #FFFFFF;
-  --surface-border: #E5E7EB;
-  --surface-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --surface-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
-
-  /* Text */
-  --text-primary:   #111827;
-  --text-secondary: #374151;
-  --text-muted:     #6B7280;
-  --text-subtle:    #9CA3AF;
-
-  /* Accent – clean indigo/blue */
-  --accent:        #4F46E5;
-  --accent-hover:  #4338CA;
-  --accent-light:  #EEF2FF;
-  --accent-text:   #4338CA;
-  --accent-border: #C7D2FE;
-
-  /* Status colours */
-  --success:       #059669;
-  --success-light: #D1FAE5;
-  --success-border:#A7F3D0;
-  --danger:        #DC2626;
-  --danger-light:  #FEE2E2;
-  --danger-border: #FECACA;
-  --warning:       #D97706;
-  --warning-light: #FEF3C7;
-  --warning-border:#FDE68A;
-  --info:          #0284C7;
-  --info-light:    #E0F2FE;
-  --info-border:   #BAE6FD;
-
-  /* Sidebar */
-  --sidebar-width:        260px;
-  --sidebar-bg:           #F9F9F9;
-  --sidebar-border:       #E5E7EB;
-  --sidebar-active-bg:    #EEF2FF;
-  --sidebar-active-text:  #4338CA;
-  --sidebar-active-border:#818CF8;
-
-  /* Legacy vars kept so other pages don't break */
-  --background-dark: #F9F9F9;
-  --surface-dark:    #FFFFFF;
-  --surface-light:   #F3F4F6;
-  --surface-card:    #FFFFFF;
-  --primary-blue:    #4F46E5;
-  --primary-purple:  #7C3AED;
-  --primary-cyan:    #06B6D4;
-  --primary-green:   #10B981;
-  --primary-red:     #EF4444;
-  --primary-yellow:  #F59E0B;
-  --primary-pink:    #EC4899;
-  --success-green:   #059669;
-  --danger-red:      #DC2626;
-  --warning-yellow:  #D97706;
-  --text-secondary:  #6B7280;
-  --text-muted-dark: #9CA3AF;
-  /* Dark-theme surface vars used by task work page */
-  --bg-dark:         #0F0F0F;
-  --card-bg:         #1A1A1A;
-  --border-subtle:   rgba(255,255,255,0.08);
-  --text-tertiary:   #6B7280;
-
-  /* Gradient kept for landing page */
-  --gradient-start: #6366F1;
-  --gradient-mid:   #8B5CF6;
-  --gradient-end:   #EC4899;
+  /* ORAH Brand Colors - Dark Theme */
+  --background-dark: #0A0A0F;
+  --surface-dark: #1A1A2E;
+  --surface-light: #252538;
+  --surface-card: #2A2A40;
+  
+  /* Gradients */
+  --gradient-start: #00C6FF;
+  --gradient-mid: #5B9EFF;
+  --gradient-end: #A855F7;
+  
+  /* Accent Colors */
+  --primary-blue: #5B9EFF;
+  --primary-purple: #8B5CF6;
+  --success-green: #10B981;
+  --danger-red: #EF4444;
+  --warning-yellow: #F59E0B;
+  
+  /* Text Colors */
+  --text-primary: #FFFFFF;
+  --text-secondary: #A0A0B8;
+  --text-muted: #6B6B85;
+  
+  /* Glow Effects */
+  --glow-cyan: rgba(0, 198, 255, 0.4);
+  --glow-purple: rgba(168, 85, 247, 0.4);
+  --glow-blue: rgba(91, 158, 255, 0.3);
 }
 
 @theme inline {
-  --color-background: var(--bg-primary);
+  --color-background: var(--background-dark);
   --color-foreground: var(--text-primary);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
+  
+  /* Custom ORAH Colors */
+  --color-orah-bg-dark: #0A0A0F;
+  --color-orah-surface: #1A1A2E;
+  --color-orah-surface-light: #252538;
+  --color-orah-card: #2A2A40;
+  
+  --color-orah-gradient-start: #00C6FF;
+  --color-orah-gradient-mid: #5B9EFF;
+  --color-orah-gradient-end: #A855F7;
+  
+  --color-orah-blue: #5B9EFF;
+  --color-orah-purple: #8B5CF6;
+  --color-orah-green: #10B981;
+  --color-orah-red: #EF4444;
+  --color-orah-yellow: #F59E0B;
+  
+  --color-orah-text: #FFFFFF;
+  --color-orah-text-secondary: #A0A0B8;
+  --color-orah-text-muted: #6B6B85;
+  }
 
-/* ===== Reset ===== */
-*, *::before, *::after {
+* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-/* ===== Base ===== */
-html {
-  overflow-y: scroll;
-  overflow-x: hidden;
-  scroll-behavior: auto;
-  height: 100%;
-}
 
-body {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  min-height: 100vh;
-  line-height: 1.5;
-}
-
-/* Sidebar layout shift – added by Navigation when sidebar is present */
-@media (min-width: 768px) {
-  body.has-sidebar {
-    padding-left: var(--sidebar-width);
-  }
-}
-
-/* Mobile bottom safe area */
-@media (max-width: 767px) {
-  body.has-sidebar {
-    padding-bottom: 70px;
-  }
-}
-
-#__next {
-  min-height: 100vh;
-}
-
-/* ===== Scrollbar ===== */
-::-webkit-scrollbar        { width: 6px; height: 6px; }
-::-webkit-scrollbar-track  { background: transparent; }
-::-webkit-scrollbar-thumb  { background: #D1D5DB; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
-
-/* ===== Selection ===== */
-::selection { background: var(--accent-light); color: var(--accent); }
-
-/* ===== Shared utility classes used across pages ===== */
-.spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--surface-border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ===== Gradient animation kept for landing page ===== */
+/* Gradient Background Animation */
 @keyframes gradient-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50%       { background-position: 100% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Rainbow Gradient Flow Animation */
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
 }
 
 .gradient-bg {
   background: linear-gradient(135deg, var(--gradient-start), var(--gradient-mid), var(--gradient-end));
   background-size: 200% 200%;
   animation: gradient-shift 10s ease infinite;
+}
+
+/* Glassmorphism Card */
+.glass-card {
+  background: rgba(42, 42, 64, 0.6);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-light);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-blue);
+}
+
+/* Selection */
+::selection {
+  background: var(--primary-blue);
+  color: white;
 }

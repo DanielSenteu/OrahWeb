@@ -1,186 +1,142 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { usePathname } from 'next/navigation'
 import './Navigation.css'
-
-interface Course {
-  id: string
-  course_name: string
-  color: string
-}
 
 export default function Navigation() {
   const pathname = usePathname()
-  const router = useRouter()
-  const supabase = createClient()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const [courses, setCourses] = useState<Course[]>([])
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const navItems = [
+    { href: '/courses', label: 'Courses', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      </svg>
+    )},
+    { href: '/lecture-notes', label: 'Notes', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+        <polyline points="10 9 9 9 8 9"/>
+      </svg>
+    )},
+    { href: '/goals', label: 'Goals', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+    )},
+    { href: '/schedule', label: 'Schedule', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/>
+        <line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+    )},
+    { href: '/assistant', label: 'Orah', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    )},
+    { href: '/dashboard', label: 'Dashboard', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="7" height="7"/>
+        <rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/>
+      </svg>
+    )},
+  ]
 
-  // Add/remove sidebar body class
-  useEffect(() => {
-    document.body.classList.add('has-sidebar')
-    return () => document.body.classList.remove('has-sidebar')
-  }, [])
-
-  useEffect(() => {
-    loadCourses()
-  }, [])
-
-  // Close mobile menu on route change
-  useEffect(() => {
-    setMobileOpen(false)
-  }, [pathname])
-
-  const loadCourses = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
-
-      const { data } = await supabase
-        .from('courses')
-        .select('id, course_name, color')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-
-      setCourses(data || [])
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
-
-  const activeCourseId = pathname.match(/\/courses\/([^/]+)/)?.[1]
-
-  const SidebarContent = () => (
-    <div className="sidebar-inner">
-      {/* Logo */}
-      <div className="sidebar-logo-row">
-        <Link href="/courses" className="sidebar-logo">ORAH</Link>
-      </div>
-
-      {/* New course button */}
-      <div className="sidebar-new-btn-wrap">
-        <Link href="/courses/new" className="sidebar-new-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          New Course
-        </Link>
-      </div>
-
-      {/* Courses section */}
-      <div className="sidebar-section">
-        <p className="sidebar-section-label">Courses</p>
-
-        {loading ? (
-          <div className="sidebar-loading">
-            <span className="sidebar-loading-dot" />
-            <span className="sidebar-loading-dot" />
-            <span className="sidebar-loading-dot" />
-          </div>
-        ) : courses.length === 0 ? (
-          <p className="sidebar-empty">No courses yet</p>
-        ) : (
-          <nav className="sidebar-course-list">
-            {courses.map(course => {
-              const isActive = activeCourseId === course.id
-              return (
-                <Link
-                  key={course.id}
-                  href={`/courses/${course.id}`}
-                  className={`sidebar-course-item ${isActive ? 'active' : ''}`}
-                >
-                  <span
-                    className="sidebar-course-dot"
-                    style={{ background: course.color || '#4F46E5' }}
-                  />
-                  <span className="sidebar-course-name">
-                    {course.course_name}
-                  </span>
-                </Link>
-              )
-            })}
-          </nav>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="sidebar-footer">
-        <button className="sidebar-signout-btn" onClick={handleSignOut}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          Sign out
-        </button>
-      </div>
-    </div>
-  )
+  const closeMenu = () => setMobileMenuOpen(false)
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="sidebar-desktop">
-        <SidebarContent />
-      </aside>
+      {/* Top Navigation - Desktop Only */}
+      <nav className="top-nav">
+        <div className="nav-container">
+          <Link href="/" className="logo">ORAH</Link>
+          <div className="nav-tabs">
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`nav-tab ${pathname === item.href ? 'active' : ''}`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </nav>
 
-      {/* Mobile top bar */}
-      <header className="mobile-topbar">
-        <button
-          className="mobile-hamburger"
-          onClick={() => setMobileOpen(true)}
-          aria-label="Open menu"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
-        </button>
-        <Link href="/courses" className="mobile-topbar-logo">ORAH</Link>
-        <Link href="/courses/new" className="mobile-topbar-new" aria-label="New course">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-        </Link>
-      </header>
+      {/* Mobile Header with Hamburger - Mobile Only */}
+      <nav className="mobile-header">
+        <div className="mobile-header-container">
+          <Link href="/" className="mobile-logo">ORAH</Link>
+          <button 
+            className="hamburger-btn"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            <span className={`hamburger-line ${mobileMenuOpen ? 'open' : ''}`}></span>
+            <span className={`hamburger-line ${mobileMenuOpen ? 'open' : ''}`}></span>
+            <span className={`hamburger-line ${mobileMenuOpen ? 'open' : ''}`}></span>
+          </button>
+        </div>
+      </nav>
 
-      {/* Mobile drawer overlay */}
-      {mobileOpen && (
-        <>
-          <div
-            className="mobile-overlay"
-            onClick={() => setMobileOpen(false)}
-          />
-          <aside className="sidebar-mobile">
-            <button
-              className="mobile-close-btn"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close menu"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18"/>
-                <line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
-            <SidebarContent />
-          </aside>
-        </>
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div className="mobile-menu-overlay" onClick={closeMenu}>
+          <div className="mobile-menu" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-menu-header">
+              <Link href="/" className="mobile-menu-logo" onClick={closeMenu}>ORAH</Link>
+              <button className="mobile-menu-close" onClick={closeMenu} aria-label="Close menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <div className="mobile-menu-items">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`mobile-menu-item ${pathname === item.href ? 'active' : ''}`}
+                  onClick={closeMenu}
+                >
+                  <div className="mobile-menu-icon">{item.icon}</div>
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Bottom Navigation - Mobile Only */}
+      <nav className="bottom-nav">
+        <div className="bottom-nav-container">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`bottom-nav-item ${pathname === item.href ? 'active' : ''}`}
+            >
+              <div className="bottom-nav-icon">{item.icon}</div>
+              <span className="bottom-nav-label">{item.label}</span>
+            </Link>
+          ))}
+        </div>
+      </nav>
     </>
   )
 }
