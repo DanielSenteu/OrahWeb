@@ -17,16 +17,17 @@
 .quiz-card {
   position: relative;
   width: 100%;
-  height: 500px;
+  min-height: 500px;
   perspective: 1000px;
+  display: grid;
+  transform-style: preserve-3d;
 }
 
 .quiz-card-front,
 .quiz-card-back {
-  position: absolute;
-  width: 100%;
-  height: 100%;
+  grid-area: 1 / 1;
   backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   transition: transform 0.6s;
   background: var(--card-bg);
   border: 1px solid var(--border-subtle);
