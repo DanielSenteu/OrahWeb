@@ -251,10 +251,12 @@ IMPORTANT BEHAVIOUR:
       // Push assistant message with tool calls
       oaiMessages.push(msg)
 
-      // Execute each tool call and push results
+      // Execute each tool call and push results (filter to function-type only)
       for (const tc of msg.tool_calls) {
-        const args = JSON.parse(tc.function.arguments || '{}')
-        const result = await executeTool(tc.function.name, args, courseId, user.id, supabase)
+        const funcTc = tc as OpenAI.Chat.Completions.ChatCompletionMessageToolCall
+        if (funcTc.type !== 'function' || !funcTc.function) continue
+        const args = JSON.parse(funcTc.function.arguments || '{}')
+        const result = await executeTool(funcTc.function.name, args, courseId, user.id, supabase)
         oaiMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
