@@ -95,13 +95,28 @@ export async function POST(req: Request) {
       .eq('exam_id', examId)
       .eq('user_id', user.id)
 
-    const relevantDocs = (documents || []).filter(d =>
-      !d.topics || d.topics.length === 0 ||
-      d.topics.some((t: string) =>
-        t.toLowerCase().includes(topic.toLowerCase()) ||
-        topic.toLowerCase().includes(t.toLowerCase())
-      )
-    )
+    // Filter documents by topic relevance.
+    // Documents with stored topic tags are matched against the requested topic.
+    // Documents with no topic tags fall back to keyword-based content filtering.
+    const STOP_WORDS = new Set(['chapter', 'unit', 'section', 'part', 'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'will', 'they', 'what', 'when'])
+    const topicKeywords = topic
+      .toLowerCase()
+      .split(/[\s:,\-\/]+/)
+      .filter(w => w.length > 3 && !STOP_WORDS.has(w))
+
+    const relevantDocs = (documents || []).filter(d => {
+      // If document has stored topic tags, use those for filtering
+      if (d.topics && d.topics.length > 0) {
+        return d.topics.some((t: string) =>
+          t.toLowerCase().includes(topic.toLowerCase()) ||
+          topic.toLowerCase().includes(t.toLowerCase())
+        )
+      }
+      // No topic tags — fall back to keyword matching against document text
+      if (topicKeywords.length === 0) return true // No meaningful keywords, include document
+      const docText = (d.extracted_text || '').toLowerCase()
+      return topicKeywords.some(kw => docText.includes(kw))
+    })
 
     if (relevantDocs.length === 0) {
       return NextResponse.json({

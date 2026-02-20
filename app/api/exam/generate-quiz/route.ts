@@ -177,21 +177,23 @@ CRITICAL QUALITY REQUIREMENTS:
    - Comparison questions ("Which is better and why?")
    - "What would happen if..." questions
 
-Return a JSON array with this exact structure:
-[
-  {
-    "question_text": "Question here?",
-    "options": [
-      {"id": "A", "text": "Option A"},
-      {"id": "B", "text": "Option B"},
-      {"id": "C", "text": "Option C"},
-      {"id": "D", "text": "Option D"}
-    ],
-    "correct_answer_id": "A",
-    "explanation": "Why the correct answer is right",
-    "incorrect_explanation": "Why the wrong answers are wrong and what the correct answer is"
-  }
-]`
+Return a JSON object with this exact structure (the "questions" key is required):
+{
+  "questions": [
+    {
+      "question_text": "Question here?",
+      "options": [
+        {"id": "A", "text": "Option A"},
+        {"id": "B", "text": "Option B"},
+        {"id": "C", "text": "Option C"},
+        {"id": "D", "text": "Option D"}
+      ],
+      "correct_answer_id": "A",
+      "explanation": "Why the correct answer is right",
+      "incorrect_explanation": "Why the wrong answers are wrong and what the correct answer is"
+    }
+  ]
+}`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-2024-11-20',
@@ -214,13 +216,18 @@ Return a JSON array with this exact structure:
 
     try {
       const parsed = JSON.parse(responseContent)
-      // Handle both {questions: [...]} and [...] formats
-      questionsData = Array.isArray(parsed) ? parsed : (parsed.questions || parsed.questions_array || [])
+      if (Array.isArray(parsed)) {
+        questionsData = parsed
+      } else {
+        // Find the first array value in the response object (handles any key name)
+        const arrayValue = Object.values(parsed).find(v => Array.isArray(v))
+        questionsData = (arrayValue as any[]) || parsed.questions || parsed.questions_array || []
+      }
     } catch (e) {
       // Try to extract array from text
       const arrayMatch = responseContent.match(/\[[\s\S]*\]/)
       if (arrayMatch) {
-        questionsData = JSON.parse(arrayMatch[0])
+        try { questionsData = JSON.parse(arrayMatch[0]) } catch (_) {}
       }
     }
 

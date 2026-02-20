@@ -222,19 +222,25 @@ async function summarizeChunk(
   chunkIndex: number,
   totalChunks: number
 ): Promise<string> {
-  const summaryPrompt = `Summarize this section of a study document about the topic "${topic}". This is part ${chunkIndex + 1} of ${totalChunks} from the document "${documentName}".
+  const summaryPrompt = `You are extracting study notes STRICTLY about the topic "${topic}" from a study document.
 
-CRITICAL: Preserve ALL key information relevant to "${topic}":
-- Key concepts and definitions
-- Important examples and formulas
-- Step-by-step processes
-- Problem-solving strategies
-- Exam-relevant information
+Document: "${documentName}" (part ${chunkIndex + 1} of ${totalChunks})
+
+YOUR TASK:
+- ONLY include content that is directly relevant to "${topic}"
+- SKIP content about other topics, chapters, or unrelated subjects
+- If this section contains little or no information about "${topic}", say so briefly and stop
+- Preserve ALL key information relevant to "${topic}":
+  * Key concepts and definitions
+  * Important examples and formulas
+  * Step-by-step processes
+  * Problem-solving strategies
+  * Exam-relevant information
 
 Document Section:
 ${chunkText}
 
-Return a comprehensive but concise summary (aim for 20-30% of original length) that preserves all exam-critical information about "${topic}".`
+Return a focused summary (20-30% of original length) containing ONLY information about "${topic}". Do not pad with irrelevant content.`
 
   const response = await fetch(OPENAI_URL, {
     method: 'POST',
