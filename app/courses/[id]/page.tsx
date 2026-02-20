@@ -162,31 +162,40 @@ export default function CourseDashboardPage() {
           .eq('user_id', user.id)
           .order('exam_date', { ascending: true })
 
-        const examsWithPlan = await Promise.all(
-          (examsData || []).map(async (exam: any) => {
-            const { data: goal } = await supabase
-              .from('user_goals')
-              .select('id')
-              .eq('user_id', user.id)
-              .eq('exam_id', exam.id)
-              .eq('goal_type', 'exam')
-              .maybeSingle()
+        // Batch lookup: 2 queries total instead of 2N
+        const examIds = (examsData || []).map((e: any) => e.id)
+        const goalsByExamId: Record<string, { id: string }> = {}
+        const firstTaskByGoalId: Record<string, string> = {}
 
-            let firstTaskId = null
-            if (goal) {
-              const { data: task } = await supabase
-                .from('task_items')
-                .select('id')
-                .eq('goal_id', goal.id)
-                .eq('user_id', user.id)
-                .order('day_number', { ascending: true })
-                .limit(1)
-                .maybeSingle()
-              firstTaskId = task?.id || null
-            }
-            return { ...exam, hasPlan: !!goal, firstTaskId }
-          })
-        )
+        if (examIds.length > 0) {
+          const { data: goals } = await supabase
+            .from('user_goals')
+            .select('id, exam_id')
+            .eq('user_id', user.id)
+            .eq('goal_type', 'exam')
+            .in('exam_id', examIds)
+          ;(goals || []).forEach((g: any) => { goalsByExamId[g.exam_id] = g })
+
+          const goalIds = (goals || []).map((g: any) => g.id)
+          if (goalIds.length > 0) {
+            const { data: tasks } = await supabase
+              .from('task_items')
+              .select('id, goal_id')
+              .eq('user_id', user.id)
+              .in('goal_id', goalIds)
+              .order('day_number', { ascending: true })
+            // Take the first task per goal (results are already ordered)
+            ;(tasks || []).forEach((t: any) => {
+              if (!firstTaskByGoalId[t.goal_id]) firstTaskByGoalId[t.goal_id] = t.id
+            })
+          }
+        }
+
+        const examsWithPlan = (examsData || []).map((exam: any) => {
+          const goal = goalsByExamId[exam.id]
+          const firstTaskId = goal ? firstTaskByGoalId[goal.id] || null : null
+          return { ...exam, hasPlan: !!goal, firstTaskId }
+        })
         setExams(examsWithPlan)
       }
     } catch (e) {

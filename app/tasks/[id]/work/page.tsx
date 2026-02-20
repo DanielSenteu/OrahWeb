@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 import './work-session.css'
 
 interface Task {
@@ -766,6 +767,7 @@ export default function TaskWorkSessionPage() {
   }
 
   const endTask = async () => {
+    setShowEndEarlyModal(false)
     try {
       await persistTimeWorked()
       await supabase
@@ -785,7 +787,43 @@ export default function TaskWorkSessionPage() {
       localStorage.removeItem(`timer_${taskId}`)
       localStorage.removeItem(`chat_${taskId}`)
 
-      router.push('/dashboard')
+      // Show undo toast then navigate
+      let undone = false
+      toast(
+        (t) => (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span>Task completed! 🎉</span>
+            <button
+              style={{
+                background: 'rgba(255,255,255,0.15)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '4px',
+                padding: '2px 10px',
+                cursor: 'pointer',
+                color: 'inherit',
+                fontWeight: 600,
+                fontSize: '0.8125rem',
+              }}
+              onClick={async () => {
+                undone = true
+                await supabase
+                  .from('task_items')
+                  .update({ is_completed: false, status: 'in_progress' })
+                  .eq('id', taskId)
+                toast.dismiss(t.id)
+                toast('Marked as in progress')
+              }}
+            >
+              Undo
+            </button>
+          </span>
+        ),
+        { duration: 5000 }
+      )
+
+      setTimeout(() => {
+        if (!undone) router.push('/dashboard')
+      }, 5200)
     } catch (error) {
       console.error('End task error:', error)
     }

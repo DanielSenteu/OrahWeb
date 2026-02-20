@@ -53,6 +53,7 @@ export default function LectureNotesPage() {
   const [processingStatus, setProcessingStatus] = useState<string>('')
   const [lastSaveTime, setLastSaveTime] = useState<number | null>(null)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // 3-hour recording limit (in seconds)
   const MAX_RECORDING_TIME = 3 * 60 * 60 // 10800 seconds = 3 hours
@@ -604,8 +605,13 @@ export default function LectureNotesPage() {
       setMode('choose')
     } finally {
       setIsProcessing(false)
-      // Reset recording ID
+      // Reset all recording state to avoid zombie refs
       recordingIdRef.current = null
+      mediaRecorderRef.current = null
+      if (periodicUploadIntervalRef.current) {
+        clearInterval(periodicUploadIntervalRef.current)
+        periodicUploadIntervalRef.current = null
+      }
     }
   }
 
@@ -680,6 +686,10 @@ export default function LectureNotesPage() {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
           }
+          if (pollTimeoutRef.current) {
+            clearTimeout(pollTimeoutRef.current)
+            pollTimeoutRef.current = null
+          }
           
           console.log('✅ Job completed, loading notes...')
           
@@ -722,6 +732,10 @@ export default function LectureNotesPage() {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
           }
+          if (pollTimeoutRef.current) {
+            clearTimeout(pollTimeoutRef.current)
+            pollTimeoutRef.current = null
+          }
           
           toast.error(`Processing failed: ${job.error_message || 'Unknown error'}. You can retry from saved notes.`)
           setMode('choose')
@@ -746,6 +760,10 @@ export default function LectureNotesPage() {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
           }
+          if (pollTimeoutRef.current) {
+            clearTimeout(pollTimeoutRef.current)
+            pollTimeoutRef.current = null
+          }
           toast.error('Processing is taking longer than expected. Please check your saved notes.')
           setMode('choose')
           setProcessingJobId(null)
@@ -762,12 +780,13 @@ export default function LectureNotesPage() {
     poll()
     pollIntervalRef.current = setInterval(poll, 2000)
 
-    // Cleanup after 10 minutes (safety limit)
-    setTimeout(() => {
+    // Cleanup after 10 minutes (safety limit) — store ref so it can be cancelled early
+    pollTimeoutRef.current = setTimeout(() => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
       }
+      pollTimeoutRef.current = null
     }, 10 * 60 * 1000)
   }
 
@@ -776,6 +795,9 @@ export default function LectureNotesPage() {
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
+      }
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current)
       }
     }
   }, [])
@@ -980,7 +1002,7 @@ export default function LectureNotesPage() {
                     : 'Choose how you want to create your notes'}
                 </p>
               </div>
-              <Link href="/academic-hub" className="btn-back">
+              <Link href="/courses" className="btn-back">
                 Back
               </Link>
             </div>
@@ -995,7 +1017,7 @@ export default function LectureNotesPage() {
                   fontSize: '1.5rem',
                   fontWeight: '700',
                   marginBottom: '1.5rem',
-                  color: 'var(--primary-cyan)',
+                  color: 'var(--accent)',
                 }}
               >
                 Processing ({savedNotes.filter((n) => n.processing_status === 'processing' || n.processing_status === 'pending').length})
@@ -1009,8 +1031,8 @@ export default function LectureNotesPage() {
                       className="text-card"
                       style={{
                         padding: '1.5rem',
-                        borderColor: 'var(--primary-cyan)',
-                        background: 'rgba(6, 182, 212, 0.05)',
+                        borderColor: 'var(--accent)',
+                        background: 'rgba(79, 70, 229, 0.05)',
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
@@ -1042,6 +1064,7 @@ export default function LectureNotesPage() {
                         {(note.processing_status === 'pending' || note.processing_status === 'failed') && (
                           <button
                             className="btn-polish"
+                            disabled={isProcessing}
                             onClick={async (e) => {
                               e.preventDefault()
                               e.stopPropagation()
@@ -1054,7 +1077,7 @@ export default function LectureNotesPage() {
                               }
                             }}
                             style={{
-                              background: 'var(--primary-cyan)',
+                              background: 'var(--accent)',
                               color: 'white',
                               padding: '0.5rem 1rem',
                               fontSize: '0.875rem',
@@ -1065,7 +1088,7 @@ export default function LectureNotesPage() {
                           </button>
                         )}
                         {note.processing_status === 'processing' && (
-                          <div className="spinner" style={{ width: '20px', height: '20px', border: '2px solid rgba(6, 182, 212, 0.3)', borderTopColor: 'var(--primary-cyan)' }}></div>
+                          <div className="spinner" style={{ width: '20px', height: '20px', border: '2px solid rgba(79, 70, 229, 0.3)', borderTopColor: 'var(--accent)' }}></div>
                         )}
                       </div>
                     </div>
@@ -1090,7 +1113,7 @@ export default function LectureNotesPage() {
                   fontSize: '1.5rem',
                   fontWeight: '700',
                   marginBottom: '1.5rem',
-                  color: 'var(--primary-red)',
+                  color: 'var(--danger)',
                 }}
               >
                 Failed to Process ({savedNotes.filter((n) => n.processing_status === 'failed').length})
@@ -1104,7 +1127,7 @@ export default function LectureNotesPage() {
                       className="text-card"
                       style={{
                         padding: '1.5rem',
-                        borderColor: 'var(--primary-red)',
+                        borderColor: 'var(--danger)',
                         background: 'rgba(239, 68, 68, 0.05)',
                       }}
                     >
@@ -1135,6 +1158,7 @@ export default function LectureNotesPage() {
                         </div>
                         <button
                           className="btn-polish"
+                          disabled={isProcessing}
                           onClick={async (e) => {
                             e.preventDefault()
                             e.stopPropagation()
@@ -1147,7 +1171,7 @@ export default function LectureNotesPage() {
                             }
                           }}
                           style={{
-                            background: 'var(--primary-red)',
+                            background: 'var(--danger)',
                             color: 'white',
                             padding: '0.5rem 1rem',
                             fontSize: '0.875rem',
@@ -1303,8 +1327,8 @@ export default function LectureNotesPage() {
                   <div
                     className="recording-circle"
                     style={{
-                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(168, 85, 247, 0.2))',
-                      border: '3px solid var(--primary-cyan)',
+                      background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(168, 85, 247, 0.2))',
+                      border: '3px solid var(--accent)',
                       animation: 'none',
                     }}
                   >
@@ -1348,7 +1372,7 @@ export default function LectureNotesPage() {
                 <div className="recording-time">{formatRecordingTime(recordingTime)}</div>
                 {recordingTime >= MAX_RECORDING_TIME - 300 && (
                   <div style={{
-                    color: recordingTime >= MAX_RECORDING_TIME - 60 ? 'var(--primary-red)' : 'var(--primary-yellow)',
+                    color: recordingTime >= MAX_RECORDING_TIME - 60 ? 'var(--danger)' : 'var(--warning)',
                     fontSize: '0.875rem',
                     fontWeight: '600',
                     marginTop: '0.5rem',
@@ -1371,7 +1395,7 @@ export default function LectureNotesPage() {
                 )}
                 {/* Save status indicator */}
                 <div style={{
-                  color: 'var(--primary-green)',
+                  color: 'var(--success)',
                   fontSize: '0.75rem',
                   marginTop: '0.5rem',
                   textAlign: 'center',
@@ -1411,11 +1435,11 @@ export default function LectureNotesPage() {
                       <div
                         className="recording-circle"
                         style={{
-                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(168, 85, 247, 0.2))',
-                          border: '3px solid var(--primary-cyan)',
+                          background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(168, 85, 247, 0.2))',
+                          border: '3px solid var(--accent)',
                         }}
                       >
-                        <div className="spinner" style={{ width: '60px', height: '60px', border: '4px solid rgba(6, 182, 212, 0.3)', borderTopColor: 'var(--primary-cyan)' }}></div>
+                        <div className="spinner" style={{ width: '60px', height: '60px', border: '4px solid rgba(79, 70, 229, 0.3)', borderTopColor: 'var(--accent)' }}></div>
                       </div>
                     </div>
                     <h2 className="option-title">Processing Recording...</h2>
@@ -1442,7 +1466,7 @@ export default function LectureNotesPage() {
                           <div style={{
                             width: `${processingProgress}%`,
                             height: '100%',
-                            background: 'linear-gradient(90deg, var(--primary-cyan), var(--primary-purple))',
+                            background: 'linear-gradient(90deg, var(--accent), var(--accent))',
                             transition: 'width 0.3s ease',
                             borderRadius: '4px'
                           }}></div>
@@ -1645,7 +1669,7 @@ For example:
                         color: 'var(--text-secondary)',
                       }}
                     >
-                      <span style={{ color: 'var(--primary-cyan)' }}>•</span>
+                      <span style={{ color: 'var(--accent)' }}>•</span>
                       <span>{point}</span>
                     </li>
                   ))}
@@ -1660,7 +1684,7 @@ For example:
                 style={{
                   marginBottom: '1.5rem',
                   background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(168, 85, 247, 0.1))',
-                  borderColor: 'rgba(6, 182, 212, 0.3)',
+                  borderColor: 'rgba(79, 70, 229, 0.3)',
                 }}
               >
                 <h2
@@ -1683,7 +1707,7 @@ For example:
                         marginBottom: '0.75rem',
                       }}
                     >
-                      <span style={{ color: 'var(--primary-green)' }}>✓</span>
+                      <span style={{ color: 'var(--success)' }}>✓</span>
                       <span>{takeaway}</span>
                     </li>
                   ))}
@@ -1710,7 +1734,7 @@ For example:
                       <h3
                         style={{
                           fontWeight: '600',
-                          color: 'var(--primary-cyan)',
+                          color: 'var(--accent)',
                           marginBottom: '0.25rem',
                         }}
                       >

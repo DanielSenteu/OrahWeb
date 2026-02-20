@@ -655,7 +655,7 @@
 .chat-panel {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 220px);
+  height: calc(100svh - 220px);
   min-height: 400px;
 }
 
@@ -841,7 +841,7 @@
 @media (max-width: 640px) {
   .cd-container { padding: 1.25rem 1rem 3rem; }
   .cd-course-name { font-size: 1.125rem; }
-  .chat-panel { height: calc(100vh - 200px); }
+  .chat-panel { height: calc(100svh - 56px - 180px); min-height: 300px; }
   .chat-msg-bubble { max-width: 86%; }
 
   .item-card {

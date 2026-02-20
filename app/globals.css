@@ -60,11 +60,21 @@
   --surface-card:    #FFFFFF;
   --primary-blue:    #4F46E5;
   --primary-purple:  #7C3AED;
+  --primary-cyan:    #06B6D4;
+  --primary-green:   #10B981;
+  --primary-red:     #EF4444;
+  --primary-yellow:  #F59E0B;
+  --primary-pink:    #EC4899;
   --success-green:   #059669;
   --danger-red:      #DC2626;
   --warning-yellow:  #D97706;
   --text-secondary:  #6B7280;
   --text-muted-dark: #9CA3AF;
+  /* Dark-theme surface vars used by task work page */
+  --bg-dark:         #0F0F0F;
+  --card-bg:         #1A1A1A;
+  --border-subtle:   rgba(255,255,255,0.08);
+  --text-tertiary:   #6B7280;
 
   /* Gradient kept for landing page */
   --gradient-start: #6366F1;

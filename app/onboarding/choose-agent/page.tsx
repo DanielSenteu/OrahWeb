@@ -14,7 +14,7 @@ export default function ChooseAgent() {
         </div>
 
         <div className="space-y-4">
-          <Link href="/academic-hub">
+          <Link href="/courses">
             <div className="glass-card p-6 rounded-2xl border border-orah-surface-light shadow-lg hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer bg-gradient-to-r from-indigo-600/15 via-purple-500/10 to-pink-500/15">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-xl font-bold">

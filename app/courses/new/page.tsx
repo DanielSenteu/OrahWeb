@@ -35,26 +35,13 @@ export default function NewCoursePage() {
         return
       }
 
-      // Determine semester if not provided
-      let semester = formData.semester
-      if (!semester) {
-        const month = new Date().getMonth()
-        if (month >= 0 && month <= 4) {
-          semester = 'Spring'
-        } else if (month >= 5 && month <= 7) {
-          semester = 'Summer'
-        } else {
-          semester = 'Fall'
-        }
-      }
-
       const { data, error } = await supabase
         .from('courses')
         .insert({
           user_id: user.id,
           course_name: formData.course_name.trim(),
           professor_name: formData.professor_name.trim() || null,
-          semester: semester || null,
+          semester: formData.semester || null,
           year: formData.year || null,
         })
         .select()
@@ -154,7 +141,7 @@ export default function NewCoursePage() {
                   className="form-input"
                   disabled={loading}
                 >
-                  <option value="">Auto-detect</option>
+                  <option value="">Select semester...</option>
                   <option value="Fall">Fall</option>
                   <option value="Spring">Spring</option>
                   <option value="Summer">Summer</option>

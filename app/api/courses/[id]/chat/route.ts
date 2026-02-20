@@ -71,7 +71,7 @@ async function executeTool(
   args: Record<string, string>,
   courseId: string,
   userId: string,
-  supabase: ReturnType<typeof createClient>
+  supabase: Awaited<ReturnType<typeof createClient>>
 ): Promise<string> {
   switch (name) {
     case 'get_course_info': {

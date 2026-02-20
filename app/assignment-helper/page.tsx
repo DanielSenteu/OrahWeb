@@ -792,7 +792,7 @@ export default function AssignmentHelperPage() {
             <h1 className="page-title">Assignment Helper</h1>
             <p className="page-subtitle">Upload your assignment to create a completion plan</p>
           </div>
-          <Link href="/academic-hub" className="btn-back">
+          <Link href="/courses" className="btn-back">
             Back
           </Link>
         </div>
