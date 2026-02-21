@@ -41,12 +41,12 @@ serve(async (req) => {
     let jobs: any[] = []
 
     if (jobId) {
-      // Process specific job
+      // Process specific job — accept "pending" or "transcribing" (resumption after edge-fn timeout)
       const { data, error } = await dbSupabase
         .from("lecture_processing_jobs")
         .select("*")
         .eq("id", jobId)
-        .eq("status", "pending")
+        .in("status", ["pending", "transcribing"])
         .limit(1)
 
       if (error) throw error
@@ -109,41 +109,63 @@ serve(async (req) => {
     let transcript = note.original_content || ""
 
     // Step 1: Transcribe audio if needed
+    // Check if a previous invocation already submitted to AssemblyAI
+    // (Supabase kills edge functions at ~150s, so we save the transcriptId and resume on re-invocation)
+    let resumedTranscriptId: string | null = null
+    if (transcript.startsWith("ASSEMBLYAI_JOB:")) {
+      resumedTranscriptId = transcript.replace("ASSEMBLYAI_JOB:", "").trim()
+      transcript = "" // treat as incomplete so we enter the block below
+      console.log(`🔄 Resuming existing AssemblyAI job: ${resumedTranscriptId}`)
+    }
+
     if (!transcript && note.audio_url) {
       console.log("🎙️ Starting transcription...")
-      
-      // Create signed URL for AssemblyAI
-      const { data: signedUrlData, error: signedUrlError } = await dbSupabase.storage
-        .from("lecture-recordings")
-        .createSignedUrl(note.audio_url, 3600)
 
-      if (signedUrlError || !signedUrlData) {
-        throw new Error(`Failed to create signed URL: ${signedUrlError?.message || "No data"}`)
+      let transcriptId = resumedTranscriptId
+
+      if (!transcriptId) {
+        // New transcription: create signed URL and submit
+        const { data: signedUrlData, error: signedUrlError } = await dbSupabase.storage
+          .from("lecture-recordings")
+          .createSignedUrl(note.audio_url, 3600)
+
+        if (signedUrlError || !signedUrlData) {
+          throw new Error(`Failed to create signed URL: ${signedUrlError?.message || "No data"}`)
+        }
+
+        // Submit to AssemblyAI
+        const submitResponse = await fetch("https://api.assemblyai.com/v2/transcript", {
+          method: "POST",
+          headers: {
+            authorization: ASSEMBLYAI_API_KEY,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            audio_url: signedUrlData.signedUrl,
+            language_detection: true,
+            speech_models: ["universal-3-pro"],
+            punctuate: true,
+            format_text: true,
+          }),
+        })
+
+        if (!submitResponse.ok) {
+          const errorText = await submitResponse.text()
+          throw new Error(`AssemblyAI submission failed: ${submitResponse.status} ${errorText}`)
+        }
+
+        const submitData = await submitResponse.json()
+        transcriptId = submitData.id
+
+        // Immediately save transcriptId to DB so a re-invocation can resume polling
+        // instead of re-submitting the same audio
+        await dbSupabase
+          .from("lecture_notes")
+          .update({ original_content: `ASSEMBLYAI_JOB:${transcriptId}` })
+          .eq("id", note.id)
+
+        console.log(`📋 AssemblyAI job submitted: ${transcriptId}`)
       }
-
-      // Submit to AssemblyAI
-      const submitResponse = await fetch("https://api.assemblyai.com/v2/transcript", {
-        method: "POST",
-        headers: {
-          authorization: ASSEMBLYAI_API_KEY,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          audio_url: signedUrlData.signedUrl,
-          language_detection: true,
-          speech_models: ["universal-3-pro"],
-          punctuate: true,
-          format_text: true,
-        }),
-      })
-
-      if (!submitResponse.ok) {
-        const errorText = await submitResponse.text()
-        throw new Error(`AssemblyAI submission failed: ${submitResponse.status} ${errorText}`)
-      }
-
-      const submitData = await submitResponse.json()
-      const transcriptId = submitData.id
 
       // Poll for completion
       let attempts = 0
@@ -188,10 +210,17 @@ serve(async (req) => {
       }
 
       if (!isComplete) {
-        throw new Error("Transcription timed out")
+        // Polling window exhausted but transcription still running on AssemblyAI.
+        // The transcriptId is already saved in DB (ASSEMBLYAI_JOB:xxx).
+        // Return normally — the client will re-trigger this worker and we'll resume.
+        console.log("⏳ Transcription still in progress — returning for re-invocation")
+        return new Response(
+          JSON.stringify({ status: "transcribing", message: "Transcription in progress, will resume" }),
+          { status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+        )
       }
 
-      // Save transcript to note
+      // Save completed transcript to note (overwrites the ASSEMBLYAI_JOB: placeholder)
       await dbSupabase
         .from("lecture_notes")
         .update({ original_content: transcript })

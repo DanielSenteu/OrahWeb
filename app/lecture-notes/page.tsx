@@ -30,6 +30,8 @@ export default function LectureNotesPage() {
   const audioChunksRef = useRef<Blob[]>([])
   const recordingIdRef = useRef<string | null>(null)
   const lastUploadTimeRef = useRef<number>(0)
+  const lastUploadChunkCountRef = useRef<number>(0)
+  const isPartialUploadingRef = useRef<boolean>(false)
   const chunkIndexRef = useRef<number>(0)
   const periodicSaveIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const periodicUploadIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -337,12 +339,18 @@ export default function LectureNotesPage() {
   // Upload partial recording to Storage as backup
   const uploadPartialRecording = async (recordingId: string) => {
     if (!userId || !recordingIdRef.current) return
+    // Prevent concurrent partial uploads (a previous one may still be running for large files)
+    if (isPartialUploadingRef.current) return
 
     try {
       const { getChunks, getMetadata } = await import('@/lib/utils/recording-storage')
       const chunks = await getChunks(recordingId)
-      
+
       if (chunks.length === 0) return
+      // Skip if fewer than 2 new chunks since last upload (avoid uploading a huge blob for tiny change)
+      if (chunks.length - lastUploadChunkCountRef.current < 2) return
+
+      isPartialUploadingRef.current = true
 
       // Combine chunks into single blob
       const partialBlob = new Blob(chunks, { type: 'audio/webm' })
@@ -394,11 +402,14 @@ export default function LectureNotesPage() {
         if (!uploadError) {
           console.log('✅ Partial recording uploaded to Storage:', uploadData.path)
           lastUploadTimeRef.current = Date.now()
+          lastUploadChunkCountRef.current = chunks.length
           setLastSaveTime(Date.now())
         }
       }
     } catch (error) {
       console.error('Error uploading partial recording:', error)
+    } finally {
+      isPartialUploadingRef.current = false
     }
   }
 
@@ -623,9 +634,14 @@ export default function LectureNotesPage() {
 
   // Poll job status and trigger worker if needed
   const pollJobStatus = async (jobId: string, noteId: string) => {
-    const maxAttempts = 300 // 10 minutes max (poll every 2 seconds)
+    const maxAttempts = 1350 // 45 minutes max (poll every 2 seconds)
     let attempts = 0
     let workerTriggered = false
+    let lastWorkerTrigger = 0
+    // Re-trigger the worker after 160s if stuck in transcribing
+    // (Supabase kills edge functions at ~150s; the worker saves the AssemblyAI
+    //  transcriptId to the DB so a re-invocation can resume polling)
+    const WORKER_RETRIGGER_MS = 160 * 1000
 
     const poll = async () => {
       try {
@@ -659,10 +675,10 @@ export default function LectureNotesPage() {
         setProcessingProgress(job.progress || 0)
         setProcessingStatus(job.status || '')
 
-        // If pending, trigger worker (only once)
-        if (job.status === 'pending' && !workerTriggered) {
-          workerTriggered = true
-          console.log('🚀 Triggering worker for job:', jobId)
+        // Helper to call the worker edge function
+        const triggerWorker = async (label: string) => {
+          console.log(`🚀 ${label} for job:`, jobId)
+          lastWorkerTrigger = Date.now()
           try {
             const workerRes = await fetch('/api/lecture-notes/process-job', {
               method: 'POST',
@@ -672,18 +688,31 @@ export default function LectureNotesPage() {
               },
               body: JSON.stringify({ jobId }),
             })
-
             if (!workerRes.ok) {
               const workerData = await workerRes.json()
               console.error('Error triggering worker:', workerData)
-              // Don't stop polling - worker might still process
             } else {
               console.log('✅ Worker triggered successfully')
             }
           } catch (err) {
             console.error('Error triggering worker:', err)
-            // Don't stop polling - worker might still process
           }
+        }
+
+        // Trigger worker on first pending
+        if (job.status === 'pending' && !workerTriggered) {
+          workerTriggered = true
+          await triggerWorker('Triggering worker')
+        }
+
+        // Re-trigger worker if stuck in transcribing beyond the edge-function kill time.
+        // The worker saves the AssemblyAI transcriptId to the DB so it can resume polling.
+        if (
+          job.status === 'transcribing' &&
+          lastWorkerTrigger > 0 &&
+          Date.now() - lastWorkerTrigger > WORKER_RETRIGGER_MS
+        ) {
+          await triggerWorker('Re-triggering worker (resuming transcription)')
         }
 
         // If completed, load notes
@@ -786,14 +815,14 @@ export default function LectureNotesPage() {
     poll()
     pollIntervalRef.current = setInterval(poll, 2000)
 
-    // Cleanup after 10 minutes (safety limit) — store ref so it can be cancelled early
+    // Cleanup after 45 minutes — a 3-hour lecture can take 30-40 min to transcribe + generate notes
     pollTimeoutRef.current = setTimeout(() => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
       }
       pollTimeoutRef.current = null
-    }, 10 * 60 * 1000)
+    }, 45 * 60 * 1000)
   }
 
   // Cleanup polling on unmount
