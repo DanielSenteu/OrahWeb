@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Navigation from '@/components/layout/Navigation'
@@ -24,6 +24,12 @@ interface TimelineItem {
   status: string
   daysUntil: number   // negative = overdue
   hasPlan?: boolean
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  toolsUsed?: string[]
 }
 
 type Section = 'home' | 'timeline' | 'assignments' | 'exams' | 'lectures' | 'chat'
@@ -122,6 +128,12 @@ export default function CourseDashboardPage() {
   // Day navigation for Home section
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [dailyTasks, setDailyTasks] = useState<any[]>([])
+
+  // Chat
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatBottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (courseId) loadCourse()
@@ -333,6 +345,62 @@ export default function CourseDashboardPage() {
 
   const formatTimelineDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+
+  // Scroll chat to bottom when messages change
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading])
+
+  const sendChatMessage = async (text?: string) => {
+    const content = (text ?? chatInput).trim()
+    if (!content || chatLoading) return
+
+    const userMsg: ChatMessage = { role: 'user', content }
+    const nextMessages = [...chatMessages, userMsg]
+    setChatMessages(nextMessages)
+    setChatInput('')
+    setChatLoading(true)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Not authenticated')
+
+      const res = await fetch('/api/course-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          courseId,
+          messages: nextMessages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Chat failed')
+
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: data.response, toolsUsed: data.toolsUsed },
+      ])
+    } catch (err: any) {
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' },
+      ])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  const CHAT_SUGGESTIONS = [
+    "What's due this week?",
+    "Show my upcoming exams",
+    "List all assignments",
+    "Do I have lecture notes?",
+  ]
 
   const color = course?.color || '#06B6D4'
 
@@ -822,23 +890,104 @@ export default function CourseDashboardPage() {
             </div>
           )}
 
-          {/* AI CHAT — built next */}
+          {/* AI CHAT */}
           {activeSection === 'chat' && (
-            <div className="cd-section">
+            <div className="cd-section chat-section">
               <div className="cd-section-header">
                 <div>
                   <h1 className="cd-section-title">AI Assistant</h1>
-                  <p className="cd-section-sub">Powered by Claude — knows your course inside out</p>
+                  <p className="cd-section-sub">Claude — knows your deadlines, notes, and course details</p>
                 </div>
               </div>
-              <div className="cd-empty">
-                <div className="cd-empty-icon" style={{ color }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+
+              {/* Message thread */}
+              <div className="chat-thread">
+                {chatMessages.length === 0 && (
+                  <div className="chat-welcome">
+                    <div className="chat-welcome-icon" style={{ color }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      </svg>
+                    </div>
+                    <h3>Hi! I&apos;m your AI assistant for {course.course_name}.</h3>
+                    <p>I can look up your deadlines, assignments, exams, and lecture notes. Ask me anything.</p>
+                    <div className="chat-suggestions">
+                      {CHAT_SUGGESTIONS.map(s => (
+                        <button key={s} className="chat-suggestion-chip" onClick={() => sendChatMessage(s)}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={`chat-message ${msg.role}`}>
+                    {msg.role === 'assistant' && (
+                      <div className="chat-avatar assistant" style={{ background: `${color}22`, color }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </div>
+                    )}
+                    <div className="chat-bubble">
+                      {msg.content}
+                      {msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                        <div className="chat-tools-used">
+                          {msg.toolsUsed.map(t => (
+                            <span key={t} className="chat-tool-chip">{t.replace(/_/g, ' ')}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {msg.role === 'user' && (
+                      <div className="chat-avatar user">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                          <circle cx="12" cy="7" r="4" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {chatLoading && (
+                  <div className="chat-message assistant">
+                    <div className="chat-avatar assistant" style={{ background: `${color}22`, color }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      </svg>
+                    </div>
+                    <div className="chat-bubble typing">
+                      <span /><span /><span />
+                    </div>
+                  </div>
+                )}
+
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* Input */}
+              <div className="chat-input-row">
+                <input
+                  className="chat-input"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage() } }}
+                  placeholder={`Ask about ${course.course_name}…`}
+                  disabled={chatLoading}
+                />
+                <button
+                  className="chat-send-btn"
+                  onClick={() => sendChatMessage()}
+                  disabled={!chatInput.trim() || chatLoading}
+                  style={{ background: `linear-gradient(135deg, ${color}, #7c3aed)` }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
-                </div>
-                <h3>AI Assistant Coming Soon</h3>
-                <p>Chat with Claude about {course.course_name}. Ask questions, generate quizzes, get help with assignments, and more.</p>
+                </button>
               </div>
             </div>
           )}
