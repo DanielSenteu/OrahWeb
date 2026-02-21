@@ -5,8 +5,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || ""
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || ""
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 interface RequestBody {
   userId: string
@@ -405,27 +405,27 @@ ${Array.from({length: totalChapters - 3}, (_, i) => `- ✓ Chapter ${i + 4} cove
 
 Return ONLY valid JSON with the complete study plan.`
 
-    const planResponse = await fetch(OPENAI_URL, {
+    const planResponse = await fetch(ANTHROPIC_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-2024-11-20",
+        model: "claude-sonnet-4-6",
+        max_tokens: 8000,
+        system: "You create specific, actionable exam study plans. Return ONLY valid JSON.",
         messages: [
-          { role: "system", content: "You create specific, actionable exam study plans. Return ONLY valid JSON." },
-          { role: "user", content: studyPlanPrompt }
-        ],
-        max_tokens: 4000,
-        temperature: 0.3,
-        response_format: { type: "json_object" }
+          { role: "user", content: studyPlanPrompt },
+          { role: "assistant", content: "{" }
+        ]
       })
     })
 
     if (!planResponse.ok) {
       const error = await planResponse.text()
-      console.error("❌ OpenAI plan creation failed:", error)
+      console.error("❌ Claude plan creation failed:", error)
       return new Response(
         JSON.stringify({ error: "Failed to create study plan", details: error }),
         { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
@@ -433,7 +433,7 @@ Return ONLY valid JSON with the complete study plan.`
     }
 
     const planData = await planResponse.json()
-    const planContent = planData.choices?.[0]?.message?.content
+    const planContent = "{" + (planData.content?.[0]?.text || "}")
 
     let studyPlan: {
       goalSummary: string

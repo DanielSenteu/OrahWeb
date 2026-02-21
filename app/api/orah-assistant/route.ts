@@ -1,23 +1,30 @@
 import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 
 export async function POST(req: Request) {
-  // Initialize OpenAI inside handler to avoid build-time evaluation
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || '',
-  })
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' })
+
   try {
-    const { messages, academicType, syllabusContent, assignmentContent, examContent, dueDate, examDate, currentLevel } = await req.json()
+    const {
+      messages,
+      academicType,
+      syllabusContent,
+      assignmentContent,
+      examContent,
+      dueDate,
+      examDate,
+      currentLevel,
+    } = await req.json()
+
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages' }, { status: 400 })
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: 'Missing OPENAI_API_KEY' }, { status: 500 })
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json({ error: 'Missing ANTHROPIC_API_KEY' }, { status: 500 })
     }
 
-    // Academic-specific system prompts
-    const academicPrompts = {
+    const academicPrompts: Record<string, string> = {
       semester: `You are Orah, an expert academic planning assistant. You're helping a student create a semester-long study plan.
 
 The student has uploaded their syllabus:
@@ -63,9 +70,10 @@ Once you have: study times, hours per day, and topics are clear, respond with ON
 Keep responses 1-2 sentences. One question at a time.`,
     }
 
-    const systemPrompt = academicType && academicPrompts[academicType as keyof typeof academicPrompts]
-      ? academicPrompts[academicType as keyof typeof academicPrompts]
-      : `You are Orah, a supportive goal achievement coach. Run a discovery chat to learn the goal, why it matters, how they work best, obstacles, timelines, time/day availability, and domain specifics. Keep it friendly and light: one short question at a time (1-3 sentences). Stay concise; avoid digging too deep too fast.
+    const systemPrompt =
+      academicType && academicPrompts[academicType]
+        ? academicPrompts[academicType]
+        : `You are Orah, a supportive goal achievement coach. Run a discovery chat to learn the goal, why it matters, how they work best, obstacles, timelines, time/day availability, and domain specifics. Keep it friendly and light: one short question at a time (1-3 sentences). Stay concise; avoid digging too deep too fast.
 
 Phases (flow naturally, don't announce them):
 1) The Dream: acknowledge goal/domain; ask a simple future-vision question; lightly ask what's at stake if they don't do it.
@@ -81,21 +89,20 @@ Rules:
 - If answers are vague, ask one gentle follow-up.
 Remember: when ready to hand off, send END_CONVERSATION as the entire reply.`
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini-2024-07-18',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages.map((m: any) => ({ role: m.role, content: m.content })),
-      ],
-      temperature: 0.6,
-      max_tokens: 300,
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      system: systemPrompt,
+      messages: messages.map((m: { role: string; content: string }) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
     })
 
-    const reply = completion.choices[0]?.message?.content || 'Sorry, I had trouble replying.'
+    const reply = response.content[0]?.type === 'text' ? response.content[0].text : 'Sorry, I had trouble replying.'
     return NextResponse.json({ reply })
   } catch (error) {
     console.error('Orah assistant error', error)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }
-

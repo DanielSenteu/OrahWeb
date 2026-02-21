@@ -6,8 +6,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || ""
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || ""
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 const FUNCTION_VERSION = "2.3.0"
 
 interface RequestBody {
@@ -402,27 +402,27 @@ CRITICAL RULES FOR DATE EXTRACTION:
 
 Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
 
-    const extractionResponse = await fetch(OPENAI_URL, {
+    const extractionResponse = await fetch(ANTHROPIC_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-2024-11-20",
-        messages: [
-          { role: "system", content: "You extract structured data from syllabi. Return ONLY valid JSON." },
-          { role: "user", content: extractionPrompt }
-        ],
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 4000,
-        temperature: 0.1,
-        response_format: { type: "json_object" }
+        system: "You extract structured data from syllabi. Return ONLY valid JSON.",
+        messages: [
+          { role: "user", content: extractionPrompt },
+          { role: "assistant", content: "{" }
+        ]
       })
     })
 
     if (!extractionResponse.ok) {
       const error = await extractionResponse.text()
-      console.error("❌ OpenAI extraction failed:", error)
+      console.error("❌ Claude extraction failed:", error)
       return new Response(
         JSON.stringify({ error: "Failed to parse syllabus", details: error }),
         { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }

@@ -1,63 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 
 export async function POST(request: NextRequest) {
-  // Initialize OpenAI inside handler to avoid build-time evaluation
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || '',
-  })
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' })
+
   try {
     const { base64Image, prompt, mimeType } = await request.json()
 
-    console.log('Vision API called with:', {
-      hasImage: !!base64Image,
-      imageLength: base64Image?.length || 0,
-      mimeType,
-      promptLength: prompt?.length || 0
-    })
-
     if (!base64Image || !prompt) {
-      console.error('Missing required fields:', { hasImage: !!base64Image, hasPrompt: !!prompt })
       return NextResponse.json(
         { error: 'Missing required fields: base64Image and prompt are required' },
         { status: 400 }
       )
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('OPENAI_API_KEY not set')
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      )
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 500 })
     }
 
-    console.log('Calling OpenAI Vision API...')
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-2024-11-20',
+    const supportedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const
+    type SupportedMimeType = typeof supportedMimeTypes[number]
+    const resolvedMime: SupportedMimeType = supportedMimeTypes.includes(mimeType as SupportedMimeType)
+      ? (mimeType as SupportedMimeType)
+      : 'image/jpeg'
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
       messages: [
         {
           role: 'user',
           content: [
             {
-              type: 'text',
-              text: prompt,
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType || 'image/jpeg'};base64,${base64Image}`,
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: resolvedMime,
+                data: base64Image,
               },
             },
+            { type: 'text', text: prompt },
           ],
         },
       ],
-      max_tokens: 4096,
     })
 
-    const extractedText = response.choices[0]?.message?.content || ''
-    console.log('Vision API success! Extracted length:', extractedText.length)
-
+    const extractedText = response.content[0]?.type === 'text' ? response.content[0].text : ''
     return NextResponse.json({ extractedText })
   } catch (error: any) {
     console.error('Vision API Error:', error)
@@ -67,4 +55,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-

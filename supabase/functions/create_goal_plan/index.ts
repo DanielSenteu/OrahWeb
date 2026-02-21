@@ -6,8 +6,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || ""
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || ""
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 interface RequestBody {
   messages: Array<{
@@ -1086,21 +1086,21 @@ Return a structured summary in this JSON format:
 CRITICAL: Be thorough and comprehensive. Preserve ALL specific details, dates, numbers, names, and especially emotional context. This summary will be used to generate a deeply personalized plan, so nothing important should be lost.`
 
         try {
-          const summarizeResponse = await fetch(OPENAI_URL, {
+          const summarizeResponse = await fetch(ANTHROPIC_URL, {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${OPENAI_API_KEY}`,
-              "Content-Type": "application/json",
+              "x-api-key": ANTHROPIC_API_KEY,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
             },
             body: JSON.stringify({
-              model: "gpt-4o-mini-2024-07-18",
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 4000,
+              system: "You are an expert at extracting and summarizing information from conversations. Always return valid JSON.",
               messages: [
-                { role: "system", content: "You are an expert at extracting and summarizing information from conversations. Always return valid JSON." },
                 { role: "user", content: summarizePrompt },
+                { role: "assistant", content: "{" },
               ],
-              max_tokens: 2500,
-              temperature: 0.3,
-              response_format: { type: "json_object" },
             }),
           })
 
@@ -1110,7 +1110,7 @@ CRITICAL: Be thorough and comprehensive. Preserve ALL specific details, dates, n
             console.log("⚠️ Continuing with original conversation (summarization failed)")
           } else {
             const summarizeData = await summarizeResponse.json()
-            const summaryContent = summarizeData.choices?.[0]?.message?.content
+            const summaryContent = "{" + (summarizeData.content?.[0]?.text || "}")
             
             if (summaryContent) {
               try {
@@ -1489,61 +1489,58 @@ Generate the complete plan now. Return ONLY valid JSON.`
     }
 
     // Check OpenAI API key
-    if (!OPENAI_API_KEY || OPENAI_API_KEY === "") {
-      console.error("❌ OPENAI_API_KEY is not set!")
+    if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY === "") {
+      console.error("❌ ANTHROPIC_API_KEY is not set!")
       return new Response(
-        JSON.stringify({ error: "OpenAI API key not configured", details: "Please set OPENAI_API_KEY secret in Supabase" }),
+        JSON.stringify({ error: "OpenAI API key not configured", details: "Please set ANTHROPIC_API_KEY secret in Supabase" }),
         { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
       )
     }
 
-    console.log("🤖 Calling OpenAI API...")
-    // Call OpenAI API
-    const openaiResponse = await fetch(OPENAI_URL, {
+    console.log("🤖 Calling Claude API...")
+    const claudeResponse = await fetch(ANTHROPIC_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-2024-11-20",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+        model: "claude-sonnet-4-6",
         max_tokens: 16000,
-        temperature: 0.7,
-        response_format: { type: "json_object" },
-        stream: false,
+        system: systemPrompt,
+        messages: [
+          { role: "user", content: userPrompt },
+          { role: "assistant", content: "{" },
+        ],
       }),
     })
 
-    if (!openaiResponse.ok) {
-      const error = await openaiResponse.text()
-      console.error("❌ OpenAI API error:", error)
-      console.error("OpenAI status:", openaiResponse.status)
+    if (!claudeResponse.ok) {
+      const error = await claudeResponse.text()
+      console.error("❌ Claude API error:", error)
       return new Response(
-        JSON.stringify({ error: "Failed to generate plan", details: error, status: openaiResponse.status }),
+        JSON.stringify({ error: "Failed to generate plan", details: error, status: claudeResponse.status }),
         { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
       )
     }
 
-    console.log("✅ OpenAI API call successful")
+    console.log("✅ Claude API call successful")
 
-    const openaiData = await openaiResponse.json()
-    const content = openaiData.choices?.[0]?.message?.content
-    const finishReason = openaiData.choices?.[0]?.finish_reason
+    const claudeData = await claudeResponse.json()
+    const content = "{" + (claudeData.content?.[0]?.text || "}")
+    const finishReason = claudeData.stop_reason
 
     if (!content) {
       return new Response(
-        JSON.stringify({ error: "No content from OpenAI" }),
+        JSON.stringify({ error: "No content from Claude" }),
         { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
       )
     }
 
     // Check if response was truncated
-    if (finishReason === "length") {
-      console.error("⚠️ WARNING: OpenAI response was TRUNCATED due to token limit!")
+    if (finishReason === "max_tokens") {
+      console.error("⚠️ WARNING: Claude response was TRUNCATED due to token limit!")
       console.error(`⚠️ Content length: ${content.length} characters`)
       return new Response(
         JSON.stringify({ 

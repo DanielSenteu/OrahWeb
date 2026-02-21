@@ -22,19 +22,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Mobile: Add padding for bottom navigation + progress bar */
-@media (max-width: 767px) {
+/* Desktop: padding-top for floating pill nav */
+@media (min-width: 768px) {
   body {
-    padding-bottom: 140px; /* Bottom nav (70px) + Progress bar (~70px) */
+    padding-top: 76px;
   }
 }
 
-/* Safe area for devices with notches (iPhone X+) */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-  @media (max-width: 767px) {
-    body {
-      padding-bottom: calc(140px + env(safe-area-inset-bottom));
-    }
+/* Mobile: padding for bottom tab bar */
+@media (max-width: 767px) {
+  body {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    padding-top: 0;
   }
 }
 
@@ -152,6 +151,196 @@ body {
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
+}
+
+/* ── First-Time Tutorial ────────────────────────────────────── */
+
+.tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.35s ease;
+}
+
+.tutorial-overlay--out {
+  animation: fadeOut 0.28s ease forwards;
+}
+
+.tutorial-card {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: rgba(13, 13, 22, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 36px 32px 28px;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tutorial-card--out {
+  animation: slideDown 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tutorial-dots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 28px;
+}
+
+.tutorial-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.tutorial-dot--active {
+  width: 20px;
+  border-radius: 4px;
+  background: #a855f7;
+}
+
+.tutorial-dot--done {
+  background: rgba(168, 85, 247, 0.4);
+}
+
+.tutorial-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  border-radius: 14px;
+  color: #a855f7;
+  margin-bottom: 20px;
+}
+
+.tutorial-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.tutorial-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 10px;
+  letter-spacing: -0.01em;
+}
+
+.tutorial-body {
+  font-size: 0.925rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.58);
+  margin-bottom: 28px;
+}
+
+.tutorial-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tutorial-skip {
+  font-size: 0.825rem;
+  color: rgba(255, 255, 255, 0.3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px 0;
+  transition: color 0.2s;
+}
+
+.tutorial-skip:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.tutorial-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 22px;
+  background: linear-gradient(135deg, #a855f7, #ec4899);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+
+.tutorial-next:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.tutorial-next:active {
+  transform: translateY(0);
+}
+
+.tutorial-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tutorial-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.tutorial-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes slideDown {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(16px) scale(0.97); }
 }
 
 /* Scrollbar Styling */

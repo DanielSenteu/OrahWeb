@@ -7,19 +7,45 @@
   --bg-hover: #1E2129;
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-glow: rgba(168, 85, 247, 0.2);
-  
+
   --primary-purple: #A855F7;
   --primary-pink: #EC4899;
   --primary-cyan: #06B6D4;
   --primary-orange: #F59E0B;
   --primary-green: #10B981;
-  
+
   --text-primary: #FFFFFF;
   --text-secondary: #9CA3AF;
   --text-tertiary: #6B7280;
-  
+
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.24);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.32);
+}
+
+/* Task color coding by goal type */
+.task-exam {
+  --task-accent: #F59E0B;
+  --task-bg: rgba(245, 158, 11, 0.08);
+  --task-border: rgba(245, 158, 11, 0.25);
+  --task-dot: #F59E0B;
+}
+.task-assignment {
+  --task-accent: #3B82F6;
+  --task-bg: rgba(59, 130, 246, 0.08);
+  --task-border: rgba(59, 130, 246, 0.25);
+  --task-dot: #3B82F6;
+}
+.task-semester {
+  --task-accent: #8B5CF6;
+  --task-bg: rgba(139, 92, 246, 0.08);
+  --task-border: rgba(139, 92, 246, 0.25);
+  --task-dot: #8B5CF6;
+}
+.task-general {
+  --task-accent: #10B981;
+  --task-bg: rgba(16, 185, 129, 0.08);
+  --task-border: rgba(16, 185, 129, 0.25);
+  --task-dot: #10B981;
 }
 
 /* Background */

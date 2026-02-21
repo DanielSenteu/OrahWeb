@@ -15,6 +15,7 @@ interface Task {
   scheduled_date_key: string
   is_completed: boolean
   day_number: number
+  goal_id: string
 }
 
 interface Goal {
@@ -23,10 +24,28 @@ interface Goal {
   current_summary: string | null
 }
 
+// Determine a color category from a goal's summary prefix
+function goalColorClass(summary: string): string {
+  const s = (summary || '').toLowerCase()
+  if (s.startsWith('exam') || s.includes('exam prep')) return 'task-exam'
+  if (s.startsWith('assignment') || s.startsWith('semester')) return 'task-assignment'
+  if (s.startsWith('semester')) return 'task-semester'
+  return 'task-general'
+}
+
+function goalLabel(summary: string): string {
+  const s = summary || ''
+  if (s.toLowerCase().startsWith('exam')) return 'Exam'
+  if (s.toLowerCase().startsWith('assignment')) return 'Assignment'
+  if (s.toLowerCase().startsWith('semester')) return 'Semester'
+  return 'Goal'
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [goal, setGoal] = useState<Goal | null>(null)
+  const [goalsMap, setGoalsMap] = useState<Record<string, Goal>>({})
   const [tasks, setTasks] = useState<Task[]>([])
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [currentView, setCurrentView] = useState<'day' | 'week' | 'month'>('day')
@@ -85,41 +104,30 @@ export default function SchedulePage() {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      
+
       if (!user) {
         router.push('/login')
         return
       }
 
-      // Get active goal
-      const { data: prefs } = await supabase
-        .from('user_preferences')
-        .select('active_goal_id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!prefs?.active_goal_id) {
-        router.push('/goals')
-        return
-      }
-
-      // Get goal details
-      const { data: goalData } = await supabase
+      // Load ALL goals for color coding
+      const { data: allGoals } = await supabase
         .from('user_goals')
-        .select('*')
-        .eq('id', prefs.active_goal_id)
-        .single()
+        .select('id, summary, current_summary')
+        .eq('user_id', user.id)
 
-      setGoal(goalData)
+      const gMap: Record<string, Goal> = {}
+      allGoals?.forEach(g => { gMap[g.id] = g })
+      setGoalsMap(gMap)
+      if (allGoals && allGoals.length > 0) setGoal(allGoals[0])
 
-      // Get tasks for selected date
+      // Get ALL tasks for selected date across ALL goals
       const dateKey = formatDateKey(selectedDate)
 
       const { data: tasksData } = await supabase
         .from('task_items')
         .select('*')
         .eq('user_id', user.id)
-        .eq('goal_id', prefs.active_goal_id)
         .eq('scheduled_date_key', dateKey)
         .order('day_number', { ascending: true })
 
@@ -166,31 +174,20 @@ export default function SchedulePage() {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      
+
       if (!user) return
 
-      // Get active goal
-      const { data: prefs } = await supabase
-        .from('user_preferences')
-        .select('active_goal_id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!prefs?.active_goal_id) return
-
-      // Get all tasks for the week
       const weekDates = getWeekDates(selectedDate)
       const dateKeys = weekDates.map(d => formatDateKey(d))
 
+      // All goals, all tasks for the week
       const { data: tasksData } = await supabase
         .from('task_items')
         .select('*')
         .eq('user_id', user.id)
-        .eq('goal_id', prefs.active_goal_id)
         .in('scheduled_date_key', dateKeys)
         .order('day_number', { ascending: true })
 
-      // Group tasks by date
       const tasksByDate: { [key: string]: Task[] } = {}
       tasksData?.forEach(task => {
         if (!tasksByDate[task.scheduled_date_key]) {
@@ -258,31 +255,20 @@ export default function SchedulePage() {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      
+
       if (!user) return
 
-      // Get active goal
-      const { data: prefs } = await supabase
-        .from('user_preferences')
-        .select('active_goal_id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!prefs?.active_goal_id) return
-
-      // Get all calendar days for the month
       const calendarDays = getMonthCalendarDays(selectedDate)
       const dateKeys = calendarDays.map(d => formatDateKey(d.date))
 
+      // All goals, all tasks for the month
       const { data: tasksData } = await supabase
         .from('task_items')
         .select('*')
         .eq('user_id', user.id)
-        .eq('goal_id', prefs.active_goal_id)
         .in('scheduled_date_key', dateKeys)
         .order('day_number', { ascending: true })
 
-      // Group tasks by date
       const tasksByDate: { [key: string]: Task[] } = {}
       tasksData?.forEach(task => {
         if (!tasksByDate[task.scheduled_date_key]) {
