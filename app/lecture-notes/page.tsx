@@ -51,6 +51,8 @@ export default function LectureNotesPage() {
   const [processingJobId, setProcessingJobId] = useState<string | null>(null)
   const [processingProgress, setProcessingProgress] = useState<number>(0)
   const [processingStatus, setProcessingStatus] = useState<string>('')
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false)
+  const [uploadSizeMB, setUploadSizeMB] = useState<number>(0)
   const [lastSaveTime, setLastSaveTime] = useState<number | null>(null)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -479,14 +481,17 @@ export default function LectureNotesPage() {
       const fileName = `${userId}/${noteId}.webm`
 
       // Step 2: Upload audio file directly to Supabase Storage
-      // This happens immediately - no timeout issues, handles large files
-      console.log('📤 Uploading audio to Storage...')
+      const sizeMB = Math.round(audioBlob.size / (1024 * 1024) * 10) / 10
+      setIsUploadingAudio(true)
+      setUploadSizeMB(sizeMB)
+      console.log(`📤 Uploading audio to Storage... (${sizeMB} MB)`)
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('lecture-recordings')
         .upload(fileName, audioBlob, {
           contentType: 'audio/webm',
-          upsert: false, // Don't overwrite if exists
+          upsert: false,
         })
+      setIsUploadingAudio(false)
 
       if (uploadError) {
         // Clean up the note if upload fails
@@ -605,6 +610,7 @@ export default function LectureNotesPage() {
       setMode('choose')
     } finally {
       setIsProcessing(false)
+      setIsUploadingAudio(false)
       // Reset all recording state to avoid zombie refs
       recordingIdRef.current = null
       mediaRecorderRef.current = null
@@ -1442,14 +1448,17 @@ export default function LectureNotesPage() {
                         <div className="spinner" style={{ width: '60px', height: '60px', border: '4px solid rgba(79, 70, 229, 0.3)', borderTopColor: 'var(--accent)' }}></div>
                       </div>
                     </div>
-                    <h2 className="option-title">Processing Recording...</h2>
+                    <h2 className="option-title">
+                      {isUploadingAudio ? 'Uploading Recording...' : 'Processing Recording...'}
+                    </h2>
                     <p className="option-description">
-                      {processingStatus === 'pending' && 'Starting processing...'}
-                      {processingStatus === 'transcribing' && `Transcribing audio... ${processingProgress}%`}
-                      {processingStatus === 'generating_notes' && `Generating notes... ${processingProgress}%`}
-                      {processingStatus === 'chunking_transcript' && `Processing long transcript... ${processingProgress}%`}
-                      {processingStatus === 'merging' && `Finalizing notes... ${processingProgress}%`}
-                      {!processingStatus && 'Transcribing and generating your notes'}
+                      {isUploadingAudio && `Uploading audio file (${uploadSizeMB} MB) — please keep this tab open...`}
+                      {!isUploadingAudio && processingStatus === 'pending' && 'Starting processing...'}
+                      {!isUploadingAudio && processingStatus === 'transcribing' && `Transcribing audio... ${processingProgress}%`}
+                      {!isUploadingAudio && processingStatus === 'generating_notes' && `Generating notes... ${processingProgress}%`}
+                      {!isUploadingAudio && processingStatus === 'chunking_transcript' && `Processing long transcript... ${processingProgress}%`}
+                      {!isUploadingAudio && processingStatus === 'merging' && `Finalizing notes... ${processingProgress}%`}
+                      {!isUploadingAudio && !processingStatus && 'Transcribing and generating your notes'}
                     </p>
                     
                     {/* Progress Bar */}
