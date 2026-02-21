@@ -16,6 +16,16 @@ interface Course {
   color: string
 }
 
+interface TimelineItem {
+  id: string
+  type: 'assignment' | 'exam'
+  name: string
+  date: string        // ISO YYYY-MM-DD
+  status: string
+  daysUntil: number   // negative = overdue
+  hasPlan?: boolean
+}
+
 type Section = 'home' | 'timeline' | 'assignments' | 'exams' | 'lectures' | 'chat'
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ReactNode }[] = [
@@ -102,6 +112,7 @@ export default function CourseDashboardPage() {
   const [lectures, setLectures] = useState<any[]>([])
   const [assignments, setAssignments] = useState<any[]>([])
   const [exams, setExams] = useState<any[]>([])
+  const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([])
   const [dataLoading, setDataLoading] = useState(false)
 
   // Deadline counters for sidebar badges
@@ -174,6 +185,42 @@ export default function CourseDashboardPage() {
           .from('course_semester_plans').select('*')
           .eq('course_id', id).eq('user_id', uid).single()
         setSemesterPlan(plan)
+      } else if (section === 'timeline') {
+        const today = new Date(); today.setHours(0, 0, 0, 0)
+        // Fetch all assignments and exams (including past, to show overdue)
+        const [{ data: aData }, { data: eData }] = await Promise.all([
+          supabase.from('course_assignments')
+            .select('id, assignment_name, due_date, status')
+            .eq('course_id', id).eq('user_id', uid)
+            .neq('status', 'completed')
+            .order('due_date', { ascending: true }),
+          supabase.from('course_exams')
+            .select('id, exam_name, exam_date, status')
+            .eq('course_id', id).eq('user_id', uid)
+            .neq('status', 'completed')
+            .order('exam_date', { ascending: true }),
+        ])
+        const items: TimelineItem[] = []
+        for (const a of (aData || [])) {
+          if (!a.due_date) continue
+          const d = new Date(a.due_date); d.setHours(0, 0, 0, 0)
+          items.push({
+            id: a.id, type: 'assignment', name: a.assignment_name,
+            date: a.due_date, status: a.status || 'not_started',
+            daysUntil: Math.ceil((d.getTime() - today.getTime()) / 86400000),
+          })
+        }
+        for (const e of (eData || [])) {
+          if (!e.exam_date) continue
+          const d = new Date(e.exam_date); d.setHours(0, 0, 0, 0)
+          items.push({
+            id: e.id, type: 'exam', name: e.exam_name,
+            date: e.exam_date, status: e.status || 'not_started',
+            daysUntil: Math.ceil((d.getTime() - today.getTime()) / 86400000),
+          })
+        }
+        items.sort((a, b) => a.daysUntil - b.daysUntil)
+        setTimelineItems(items)
       } else if (section === 'lectures') {
         const { data: d } = await supabase
           .from('course_lectures').select('*')
@@ -264,6 +311,28 @@ export default function CourseDashboardPage() {
     if (dailyTasks.length === 0) return 0
     return Math.round((dailyTasks.filter((t: any) => t.is_completed).length / dailyTasks.length) * 100)
   }
+
+  // Group timeline items into labelled buckets
+  const getTimelineGroups = () => {
+    const groups: { label: string; sublabel: string; items: TimelineItem[] }[] = []
+    const buckets: { label: string; sublabel: string; test: (d: number) => boolean }[] = [
+      { label: 'Overdue', sublabel: 'Past due', test: d => d < 0 },
+      { label: 'Today', sublabel: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), test: d => d === 0 },
+      { label: 'Tomorrow', sublabel: new Date(Date.now() + 86400000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), test: d => d === 1 },
+      { label: 'This Week', sublabel: 'In the next 7 days', test: d => d >= 2 && d <= 7 },
+      { label: 'Next Week', sublabel: '8–14 days away', test: d => d >= 8 && d <= 14 },
+      { label: 'This Month', sublabel: '15–30 days away', test: d => d >= 15 && d <= 30 },
+      { label: 'Later', sublabel: 'More than 30 days away', test: d => d > 30 },
+    ]
+    for (const b of buckets) {
+      const matching = timelineItems.filter(i => b.test(i.daysUntil))
+      if (matching.length > 0) groups.push({ label: b.label, sublabel: b.sublabel, items: matching })
+    }
+    return groups
+  }
+
+  const formatTimelineDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 
   const color = course?.color || '#06B6D4'
 
@@ -449,27 +518,93 @@ export default function CourseDashboardPage() {
             </div>
           )}
 
-          {/* TIMELINE — built next */}
+          {/* TIMELINE */}
           {activeSection === 'timeline' && (
             <div className="cd-section">
               <div className="cd-section-header">
                 <div>
                   <h1 className="cd-section-title">Timeline</h1>
-                  <p className="cd-section-sub">Upcoming deadlines for this course</p>
+                  <p className="cd-section-sub">
+                    {timelineItems.length > 0
+                      ? `${timelineItems.length} pending deadline${timelineItems.length !== 1 ? 's' : ''}`
+                      : 'No pending deadlines'}
+                  </p>
                 </div>
               </div>
-              <div className="cd-empty">
-                <div className="cd-empty-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
-                    <line x1="8" y1="18" x2="21" y2="18" />
-                    <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" />
-                    <line x1="3" y1="18" x2="3.01" y2="18" />
-                  </svg>
+
+              {dataLoading ? (
+                <div className="cd-inner-loading"><div className="spinner" style={{ width: 32, height: 32 }} /><p>Loading…</p></div>
+              ) : timelineItems.length === 0 ? (
+                <div className="cd-empty">
+                  <div className="cd-empty-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                  <h3>All Clear</h3>
+                  <p>No pending assignments or exams for this course.</p>
                 </div>
-                <h3>Timeline Coming Soon</h3>
-                <p>A deadline-driven timeline view is being built for this course.</p>
-              </div>
+              ) : (
+                <div className="tl-groups">
+                  {getTimelineGroups().map(group => (
+                    <div key={group.label} className="tl-group">
+                      <div className="tl-group-header">
+                        <span className={`tl-group-label ${group.label === 'Overdue' ? 'overdue' : ''}`}>{group.label}</span>
+                        <span className="tl-group-sub">{group.sublabel}</span>
+                      </div>
+                      <div className="tl-items">
+                        {group.items.map(item => {
+                          const overdue = item.daysUntil < 0
+                          const urgent = item.daysUntil >= 0 && item.daysUntil <= 3
+                          return (
+                            <div key={item.id} className={`tl-item ${overdue ? 'overdue' : urgent ? 'urgent' : ''}`}>
+                              {/* Spine dot */}
+                              <div className={`tl-dot ${item.type} ${overdue ? 'overdue' : ''}`} />
+
+                              <div className="tl-item-body">
+                                <div className="tl-item-top">
+                                  <span className={`tl-type-tag ${item.type}`}>
+                                    {item.type === 'assignment' ? 'Assignment' : 'Exam'}
+                                  </span>
+                                  <span className="tl-item-date">{formatTimelineDate(item.date)}</span>
+                                </div>
+                                <h3 className="tl-item-name">{item.name}</h3>
+                                <div className="tl-item-footer">
+                                  <span className={`cd-status-badge ${item.status}`}>
+                                    {item.status.replace('_', ' ')}
+                                  </span>
+                                  {overdue ? (
+                                    <span className="tl-overdue-chip">
+                                      {Math.abs(item.daysUntil)}d overdue
+                                    </span>
+                                  ) : item.daysUntil === 0 ? (
+                                    <span className="tl-urgent-chip">Due today</span>
+                                  ) : item.daysUntil === 1 ? (
+                                    <span className="tl-urgent-chip">Due tomorrow</span>
+                                  ) : urgent ? (
+                                    <span className="tl-urgent-chip">{item.daysUntil}d left</span>
+                                  ) : (
+                                    <span className="tl-days-chip">{item.daysUntil}d</span>
+                                  )}
+                                  <Link
+                                    href={item.type === 'assignment'
+                                      ? `/assignment-helper?courseId=${courseId}&assignmentId=${item.id}`
+                                      : `/exam-prep?courseId=${courseId}&examId=${item.id}`
+                                    }
+                                    className="cd-item-btn"
+                                  >
+                                    {item.type === 'exam' ? 'Exam Prep' : 'View'}
+                                  </Link>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
