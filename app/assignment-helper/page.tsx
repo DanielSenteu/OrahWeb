@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Navigation from '@/components/layout/Navigation'
@@ -128,6 +128,8 @@ const detectAssignmentScale = (text: string) => {
 
 export default function AssignmentHelperPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const assignmentId = searchParams.get('assignmentId')
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -521,6 +523,15 @@ export default function AssignmentHelperPage() {
         hours_per_day: planHoursPerDay,
         due_date: planDueDate,
       })
+
+      // Mark course_assignment as having a plan so the dashboard button updates
+      if (assignmentId) {
+        supabase.from('course_assignments')
+          .update({ step_by_step_plan: { created: true, created_at: new Date().toISOString() } })
+          .eq('id', assignmentId)
+          .then(() => {})
+          .catch(() => {})
+      }
 
       // Small delay to ensure PostHog event is sent before navigation
       await new Promise(resolve => setTimeout(resolve, 200))

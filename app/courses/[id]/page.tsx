@@ -143,7 +143,6 @@ export default function CourseDashboardPage() {
               .select('id')
               .eq('user_id', user.id)
               .eq('exam_id', exam.id)
-              .eq('goal_type', 'exam')
               .maybeSingle()
 
             let finalGoal = goalData
@@ -538,11 +537,11 @@ ${course?.syllabus_text ? `Syllabus excerpt: ${course.syllabus_text.slice(0, 150
                             {(a.status || 'not started').replace('_', ' ')}
                           </span>
                           <Link
-                            href={`/assignment-helper?courseId=${courseId}&assignmentId=${a.id}`}
-                            className="item-action-btn"
+                            href={a.step_by_step_plan ? `/schedule` : `/assignment-helper?courseId=${courseId}&assignmentId=${a.id}`}
+                            className={`item-action-btn ${a.step_by_step_plan ? 'item-action-primary' : ''}`}
                             style={{ '--btn-color': courseColor } as React.CSSProperties}
                           >
-                            {a.step_by_step_plan ? 'View Plan' : 'Create Plan'}
+                            {a.step_by_step_plan ? 'Go to Plan' : 'Create Plan'}
                           </Link>
                         </div>
                       </div>
@@ -610,7 +609,7 @@ ${course?.syllabus_text ? `Syllabus excerpt: ${course.syllabus_text.slice(0, 150
                               className="item-action-btn item-action-primary"
                               style={{ '--btn-color': courseColor } as React.CSSProperties}
                             >
-                              Study Now
+                              Go to Plan
                             </Link>
                           ) : (
                             <Link

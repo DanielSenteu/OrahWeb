@@ -38,7 +38,9 @@ export async function POST(req: Request) {
 
     const notesPrompt = `You are an ELITE note-taker creating EXAM-READY study notes for the topic "${topic}". Your notes should be so thorough that a student could ace the exam using only these notes.
 
-STUDY MATERIALS FOR THIS TOPIC:
+CRITICAL: Focus EXCLUSIVELY on "${topic}". Even if the study materials contain information about other topics, IGNORE that content entirely. ONLY use information relevant to "${topic}". If the materials lack sufficient information about "${topic}", supplement with your own comprehensive knowledge of the subject.
+
+STUDY MATERIALS:
 ${notes}
 
 Return ONLY valid JSON with this structure:
@@ -78,7 +80,7 @@ Return ONLY valid JSON with this structure:
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
+      max_tokens: 16000,
       system: 'You create comprehensive, exam-ready study notes. Return ONLY valid JSON, no markdown or explanation.',
       messages: [
         { role: 'user', content: notesPrompt },
