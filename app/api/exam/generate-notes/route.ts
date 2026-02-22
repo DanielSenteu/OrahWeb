@@ -3,7 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 
 export async function POST(req: Request) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' })
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured on the server' }, { status: 500 })
+  }
+  const anthropic = new Anthropic()
 
   try {
     const { examId, topic, notes } = await req.json()

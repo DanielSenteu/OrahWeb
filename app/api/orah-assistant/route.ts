@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 
 export async function POST(req: Request) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' })
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'Missing ANTHROPIC_API_KEY' }, { status: 500 })
+  }
+  const anthropic = new Anthropic()
 
   try {
     const {
@@ -18,10 +21,6 @@ export async function POST(req: Request) {
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages' }, { status: 400 })
-    }
-
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json({ error: 'Missing ANTHROPIC_API_KEY' }, { status: 500 })
     }
 
     const academicPrompts: Record<string, string> = {

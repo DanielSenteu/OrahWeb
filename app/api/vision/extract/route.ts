@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 
 export async function POST(request: NextRequest) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' })
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 500 })
+  }
+  const anthropic = new Anthropic()
 
   try {
     const { base64Image, prompt, mimeType } = await request.json()
@@ -12,10 +15,6 @@ export async function POST(request: NextRequest) {
         { error: 'Missing required fields: base64Image and prompt are required' },
         { status: 400 }
       )
-    }
-
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 500 })
     }
 
     const supportedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const
