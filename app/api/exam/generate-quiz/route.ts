@@ -159,20 +159,20 @@ Return a JSON array with this EXACT structure:
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
-      system: 'You are an expert at creating educational quiz questions. Return only valid JSON arrays.',
+      system: 'You are an expert at creating educational quiz questions. Return ONLY a valid JSON array, no markdown or explanation.',
       messages: [
         { role: 'user', content: prompt },
-        { role: 'assistant', content: '[' },
       ],
     })
 
     const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const cleanedQuiz = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
     let questionsData: any[] = []
 
     try {
-      questionsData = JSON.parse('[' + rawText)
+      questionsData = JSON.parse(cleanedQuiz)
     } catch {
-      const arrayMatch = ('[' + rawText).match(/\[[\s\S]*\]/)
+      const arrayMatch = cleanedQuiz.match(/\[[\s\S]*\]/)
       if (arrayMatch) questionsData = JSON.parse(arrayMatch[0])
     }
 

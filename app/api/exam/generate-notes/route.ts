@@ -79,15 +79,22 @@ Return ONLY valid JSON with this structure:
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 6000,
-      system: 'You create comprehensive, exam-ready study notes. Return only valid JSON.',
+      system: 'You create comprehensive, exam-ready study notes. Return ONLY valid JSON, no markdown or explanation.',
       messages: [
         { role: 'user', content: notesPrompt },
-        { role: 'assistant', content: '{' },
       ],
     })
 
     const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const generatedNotes = JSON.parse('{' + rawText)
+    const cleanedNotes = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
+    let generatedNotes: any
+    try {
+      generatedNotes = JSON.parse(cleanedNotes)
+    } catch {
+      const match = cleanedNotes.match(/\{[\s\S]*\}/)
+      if (!match) throw new Error('Failed to parse notes response as JSON')
+      generatedNotes = JSON.parse(match[0])
+    }
 
     return NextResponse.json({ success: true, notes: generatedNotes })
   } catch (error: any) {

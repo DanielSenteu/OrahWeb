@@ -60,14 +60,19 @@ Return ONLY valid JSON with this structure:
           role: 'user',
           content: `Course: ${courseName || 'Lecture'}\n\nTranscript:\n${transcript}`,
         },
-        { role: 'assistant', content: '{' },
       ],
     })
 
     const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const content = '{' + rawText
-
-    const notes = JSON.parse(content)
+    const cleanedLN = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
+    let notes: any
+    try {
+      notes = JSON.parse(cleanedLN)
+    } catch {
+      const match = cleanedLN.match(/\{[\s\S]*\}/)
+      if (!match) throw new Error('Failed to parse lecture notes as JSON')
+      notes = JSON.parse(match[0])
+    }
     return NextResponse.json({ notes })
   } catch (error) {
     console.error('Lecture notes error:', error)

@@ -67,12 +67,19 @@ Important:
       system: 'You are an expert at extracting structured academic information from syllabi. Return only valid JSON.',
       messages: [
         { role: 'user', content: extractionPrompt },
-        { role: 'assistant', content: '{' },
       ],
     })
 
     const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const extractedData = JSON.parse('{' + rawText)
+    const cleanedSyllabus = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
+    let extractedData: any
+    try {
+      extractedData = JSON.parse(cleanedSyllabus)
+    } catch {
+      const match = cleanedSyllabus.match(/\{[\s\S]*\}/)
+      if (!match) throw new Error('Failed to parse syllabus extraction as JSON')
+      extractedData = JSON.parse(match[0])
+    }
 
     // Store lectures
     if (extractedData.lectures && Array.isArray(extractedData.lectures)) {

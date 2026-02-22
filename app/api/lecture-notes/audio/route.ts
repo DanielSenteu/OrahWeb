@@ -84,12 +84,19 @@ JSON structure:
       system: systemPrompt,
       messages: [
         { role: 'user', content: `Create exam-ready notes from this lecture transcript:\n\n${transcript}` },
-        { role: 'assistant', content: '{' },
       ],
     })
 
     const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const notes = JSON.parse('{' + rawText)
+    const cleanedAudio = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
+    let notes: any
+    try {
+      notes = JSON.parse(cleanedAudio)
+    } catch {
+      const match = cleanedAudio.match(/\{[\s\S]*\}/)
+      if (!match) throw new Error('Failed to parse audio notes as JSON')
+      notes = JSON.parse(match[0])
+    }
 
     if (noteId) {
       await supabase
