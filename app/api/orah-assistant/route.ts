@@ -89,14 +89,21 @@ Rules:
 - If answers are vague, ask one gentle follow-up.
 Remember: when ready to hand off, send END_CONVERSATION as the entire reply.`
 
+    // Anthropic requires messages to start with 'user'. Strip any leading assistant messages
+    // (e.g. the initial greeting that lives only in the UI state).
+    const apiMessages = messages
+      .map((m: { role: string; content: string }) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }))
+    const firstUserIdx = apiMessages.findIndex((m) => m.role === 'user')
+    const trimmedMessages = firstUserIdx >= 0 ? apiMessages.slice(firstUserIdx) : apiMessages
+
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
       system: systemPrompt,
-      messages: messages.map((m: { role: string; content: string }) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+      messages: trimmedMessages,
     })
 
     const reply = response.content[0]?.type === 'text' ? response.content[0].text : 'Sorry, I had trouble replying.'

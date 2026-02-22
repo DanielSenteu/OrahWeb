@@ -199,26 +199,93 @@ const getAvailableStudyDates = (
   return dates.sort()
 }
 
-// Create simple work blocks based on user's preferred days/week
-const createWorkBlocks = (
+// Create deadline-aware prep tasks: schedule lead-up work before each deadline
+// instead of generic work blocks.
+const createDeadlinePrepTasks = (
+  events: ExtractedEvent[],
   availableDates: string[],
   focusDuration: number,
-  courseCode: string
+  courseCode: string,
+  todayStr: string,
+  semesterEndStr: string
 ): CalendarTask[] => {
   const tasks: CalendarTask[] = []
-  
-  // Create a simple work block for each available study date (already YYYY-MM-DD strings)
-  availableDates.forEach(dateStr => {
-    tasks.push({
-      title: `Work Block: ${courseCode} (${focusDuration} min)`,
-      description: `Use this time to work on assignments, review material, or prepare for upcoming quizzes/exams.`,
-      scheduledDate: dateStr,
-      estimatedMinutes: focusDuration,
-      eventType: "study",
-      isPrep: true
+  const usedDates = new Set<string>()
+
+  // Filter to one-time deadline events (assignments, quizzes, midterms, finals, projects)
+  const deadlineEvents = events.filter(e =>
+    e.date &&
+    ['assignment', 'quiz', 'midterm', 'final', 'project'].includes(e.type) &&
+    e.date > todayStr &&
+    e.date <= semesterEndStr
+  ).sort((a, b) => (a.date! > b.date! ? 1 : -1))
+
+  // For each deadline, find available prep dates in the window before it
+  deadlineEvents.forEach(event => {
+    const deadlineDate = event.date!
+    // How many lead-up days to schedule (larger for exams)
+    const leadDays = event.type === 'final' ? 14
+      : event.type === 'midterm' ? 10
+      : event.type === 'project' ? 7
+      : 3
+
+    // Find available prep dates in the [today, deadline) window
+    const prepDates = availableDates.filter(d =>
+      d >= todayStr && d < deadlineDate
+    )
+
+    // Take up to `leadDays` dates closest to the deadline
+    const selectedDates = prepDates.slice(-leadDays)
+
+    const totalSessions = selectedDates.length
+    selectedDates.forEach((dateStr, idx) => {
+      const sessionNum = idx + 1
+      let title: string
+      let description: string
+
+      if (event.type === 'final' || event.type === 'midterm') {
+        const phases = ['Review lecture notes', 'Practice problems', 'Past papers / mock exam', 'Weak-area deep dive', 'Final review']
+        const phase = phases[Math.min(idx, phases.length - 1)]
+        title = `${sessionNum === totalSessions ? 'Final Prep' : phase}: ${event.title}`
+        description = sessionNum === totalSessions
+          ? `Last prep session before ${event.title}. Light review only — trust your preparation.`
+          : `${phase} session for ${event.title} (${event.date}).`
+      } else {
+        const phases = ['Start & outline', 'Make progress', 'Almost done — push through', 'Final polish & submit']
+        const phase = phases[Math.min(idx, phases.length - 1)]
+        title = `${phase}: ${event.title}`
+        description = `Session ${sessionNum}/${totalSessions} for ${event.title}. Due ${event.date}.${event.dueTime ? ` (${event.dueTime})` : ''}`
+      }
+
+      if (!usedDates.has(dateStr + event.title)) {
+        tasks.push({
+          title,
+          description,
+          scheduledDate: dateStr,
+          estimatedMinutes: focusDuration,
+          eventType: "study",
+          isPrep: true
+        })
+        usedDates.add(dateStr + event.title)
+      }
     })
   })
-  
+
+  // Fill any remaining available dates that have no prep tasks with a generic review block
+  availableDates.forEach(dateStr => {
+    const hasTask = tasks.some(t => t.scheduledDate === dateStr)
+    if (!hasTask) {
+      tasks.push({
+        title: `Review & Catch Up: ${courseCode}`,
+        description: `Use this flexible block to review recent material, get ahead on readings, or work on upcoming assignments.`,
+        scheduledDate: dateStr,
+        estimatedMinutes: focusDuration,
+        eventType: "study",
+        isPrep: true
+      })
+    }
+  })
+
   return tasks
 }
 
@@ -430,7 +497,9 @@ Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
     }
 
     const extractionData = await extractionResponse.json()
-    const extractedContent = extractionData.choices?.[0]?.message?.content
+    // Anthropic API returns content[0].text (not OpenAI's choices[0].message.content)
+    // The assistant prefill was "{", so prepend it back before parsing
+    const extractedContent = "{" + (extractionData.content?.[0]?.text || "")
 
     let extracted: {
       courseName: string
@@ -840,10 +909,17 @@ Return ONLY valid JSON with ALL dates in YYYY-MM-DD format.`
 
     console.log(`📚 ${availableStudyDates.length} available study dates (${daysPerWeek} days/week, excluding ${classDays.size} class days)`)
 
-    // Step 5: Create simple work blocks for available study dates
+    // Step 5: Create deadline-aware prep tasks (or fill gaps with review blocks)
     const courseCode = extracted.courseCode || extracted.courseName || "Course"
-    const workBlocks = createWorkBlocks(availableStudyDates, focusDuration, courseCode)
-    allTasks.push(...workBlocks)
+    const prepTasks = createDeadlinePrepTasks(
+      extracted.events,
+      availableStudyDates,
+      focusDuration,
+      courseCode,
+      todayStr,
+      semesterEndStr
+    )
+    allTasks.push(...prepTasks)
 
     // Sort all tasks by date
     allTasks.sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate))
