@@ -529,8 +529,7 @@ export default function AssignmentHelperPage() {
         supabase.from('course_assignments')
           .update({ step_by_step_plan: { created: true, created_at: new Date().toISOString() } })
           .eq('id', assignmentId)
-          .then(() => {})
-          .catch(() => {})
+          .then(undefined, () => {})
       }
 
       // Small delay to ensure PostHog event is sent before navigation
