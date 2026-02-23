@@ -191,30 +191,43 @@ export default function CourseDashboardPage() {
     setOrahLoading(true)
 
     try {
-      // Build course context for Orah
-      const courseContext = `
-Course: ${course?.course_name}
-Professor: ${course?.professor_name || 'Not specified'}
-Semester: ${course?.semester || ''} ${course?.year || ''}
-Upcoming assignments: ${assignments.slice(0, 5).map(a => `${a.assignment_name} due ${a.due_date || 'TBD'}`).join(', ') || 'none loaded'}
-Upcoming exams: ${exams.slice(0, 3).map(e => `${e.exam_name} on ${e.exam_date || 'TBD'}`).join(', ') || 'none loaded'}
-${course?.syllabus_text ? `Syllabus excerpt: ${course.syllabus_text.slice(0, 1500)}` : ''}
-      `.trim()
-
-      const res = await fetch('/api/orah-assistant', {
+      const res = await fetch('/api/course-assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages,
-          academicType: 'course',
-          syllabusContent: courseContext,
+          courseId,
+          courseName: course?.course_name,
+          syllabus: course?.syllabus_text ?? null,
         }),
       })
 
       if (!res.ok) throw new Error('Failed')
       const data = await res.json()
+
       if (data.reply) {
         setOrahMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+      }
+
+      // Handle tool actions returned by the API
+      if (data.action) {
+        const action = data.action
+        if (action.type === 'switch_tab') {
+          setTimeout(() => {
+            setActiveTab(action.tab as Tab)
+            setOrahOpen(false)
+          }, 900)
+        } else if (action.type === 'navigate') {
+          const urlMap: Record<string, string> = {
+            assignment_helper: `/assignment-helper?courseId=${courseId}`,
+            exam_prep: `/exam-prep?courseId=${courseId}`,
+            lecture_notes: `/lecture-notes?courseId=${courseId}`,
+            semester_plan: `/courses/${courseId}/semester-plan`,
+            syllabus: `/courses/${courseId}/syllabus`,
+          }
+          const url = urlMap[action.page]
+          if (url) setTimeout(() => router.push(url), 1200)
+        }
       }
     } catch {
       setOrahMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I had trouble connecting. Try again in a moment." }])
@@ -679,6 +692,28 @@ ${course?.syllabus_text ? `Syllabus excerpt: ${course.syllabus_text.slice(0, 150
                 <div className="orah-msg-bubble">{m.content}</div>
               </div>
             ))}
+
+            {/* Suggestion chips — shown only after the greeting */}
+            {orahMessages.length === 1 && !orahLoading && (
+              <div className="orah-suggestions">
+                {[
+                  "What's due this week?",
+                  "Show my exams",
+                  "Show assignments",
+                  "Create semester plan",
+                  "Study tips",
+                ].map(chip => (
+                  <button
+                    key={chip}
+                    className="orah-chip"
+                    style={{ borderColor: `${courseColor}55`, color: courseColor }}
+                    onClick={() => sendOrahMessage(chip)}
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            )}
             {orahLoading && (
               <div className="orah-msg assistant">
                 <div className="orah-msg-avatar" style={{ color: courseColor }}>O</div>

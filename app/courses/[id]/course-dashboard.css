@@ -429,6 +429,27 @@
 .orah-send-btn:not(:disabled):hover { transform: scale(1.1); }
 .orah-send-btn svg { width: 16px; height: 16px; }
 
+/* Suggestion chips */
+.orah-suggestions {
+  display: flex; flex-wrap: wrap; gap: 0.375rem;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.orah-chip {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  background: transparent;
+  font-size: 0.78rem; font-weight: 500;
+  cursor: pointer; transition: all 0.18s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.orah-chip:hover {
+  background: rgba(255,255,255,0.06);
+  transform: translateY(-1px);
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .course-dashboard-container { padding: 1rem; }
