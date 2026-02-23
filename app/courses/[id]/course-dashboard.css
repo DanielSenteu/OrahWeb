@@ -487,9 +487,28 @@
 .course-semester { font-size: 0.875rem; color: var(--text-tertiary); margin: 0; }
 
 /* Tabs */
+.course-tabs-row {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 1rem; margin-bottom: 2rem;
+}
+
 .course-tabs {
   display: flex; gap: 0.25rem; border-bottom: 2px solid var(--border-subtle);
-  margin-bottom: 2rem; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  flex: 1; overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+
+.orah-fullpage-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  background: color-mix(in srgb, var(--btn-color, #6366f1) 12%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--btn-color, #6366f1) 40%, transparent);
+  color: var(--btn-color, #6366f1);
+  border-radius: 8px; font-size: 0.8125rem; font-weight: 600;
+  cursor: pointer; transition: all 0.18s; white-space: nowrap;
+  font-family: inherit; flex-shrink: 0; margin-bottom: 2px;
+}
+.orah-fullpage-btn:hover {
+  background: color-mix(in srgb, var(--btn-color, #6366f1) 20%, transparent);
 }
 
 .course-tab {
