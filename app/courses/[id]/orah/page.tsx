@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Navigation from '@/components/layout/Navigation'
-import { OrahMessage, MarkdownMessage, downloadCheatsheetPDF } from '../orah-components'
+import { OrahMessage, MarkdownMessage, downloadCheatsheetPDF, OrahErrorBoundary } from '../orah-components'
 import '../course-dashboard.css'
 import './orah-fullpage.css'
 
@@ -183,7 +183,7 @@ export default function OrahFullPage() {
               )}
               <div className={`orah-msg-bubble${m.isMath ? ' orah-msg-bubble--math' : ''}`}>
                 {m.role === 'assistant'
-                  ? <MarkdownMessage content={m.content} isMath={m.isMath} />
+                  ? <OrahErrorBoundary><MarkdownMessage content={m.content} isMath={m.isMath} /></OrahErrorBoundary>
                   : <span>{m.content}</span>
                 }
 

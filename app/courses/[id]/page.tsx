@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Navigation from '@/components/layout/Navigation'
 import Link from 'next/link'
 import './course-dashboard.css'
-import { OrahMessage, MarkdownMessage, downloadCheatsheetPDF } from './orah-components'
 
 interface Course {
   id: string
@@ -39,18 +38,8 @@ export default function CourseDashboardPage() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [dailyTasks, setDailyTasks] = useState<any[]>([])
 
-  // Orah sidebar
-  const [orahOpen, setOrahOpen] = useState(true)
-  const [orahMessages, setOrahMessages] = useState<OrahMessage[]>([])
-  const [orahInput, setOrahInput] = useState('')
-  const [orahLoading, setOrahLoading] = useState(false)
-  const orahEndRef = useRef<HTMLDivElement>(null)
-  const orahInputRef = useRef<HTMLTextAreaElement>(null)
-  const streamTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   useEffect(() => {
     if (courseId) loadCourse()
-    return () => { if (streamTimerRef.current) clearTimeout(streamTimerRef.current) }
   }, [courseId])
 
   useEffect(() => { if (courseId && course) loadTabData(courseId, activeTab) }, [activeTab, courseId])
@@ -59,16 +48,6 @@ export default function CourseDashboardPage() {
     if (activeTab === 'overview' && semesterPlan?.plan_data?.tasks) filterTasksForDate(selectedDate)
   }, [selectedDate, semesterPlan, activeTab])
 
-  useEffect(() => { orahEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [orahMessages, orahLoading])
-
-  useEffect(() => {
-    if (orahOpen && orahMessages.length === 0 && course) {
-      setOrahMessages([{
-        role: 'assistant',
-        content: `Hey! I'm **Orah**, your AI for **${course.course_name}**.\n\nI have full access to your recordings, transcripts, schedule, and course data. Ask me anything — I can make cheatsheets, solve math, draw diagrams, create quizzes, build study plans, and more.`,
-      }])
-    }
-  }, [orahOpen, course])
 
   const loadCourse = async () => {
     try {
@@ -117,84 +96,6 @@ export default function CourseDashboardPage() {
       }
     } catch (e) { console.error('Error loading tab data:', e) }
     finally { setDataLoading(false) }
-  }
-
-  // ── Simulated streaming ────────────────────────────────────────────────────
-  const streamIntoMessage = useCallback((fullText: string, msgIndex: number, extras: Partial<OrahMessage>, onDone?: () => void) => {
-    const tokens = fullText.split(/(\s+)/)
-    let pos = 0
-    const CHUNK = 4
-    const DELAY = 16
-
-    const tick = () => {
-      if (pos >= tokens.length) {
-        setOrahMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, ...extras, content: fullText } : m))
-        onDone?.()
-        return
-      }
-      const chunk = tokens.slice(pos, pos + CHUNK).join('')
-      setOrahMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, content: m.content + chunk } : m))
-      pos += CHUNK
-      streamTimerRef.current = setTimeout(tick, DELAY)
-    }
-    tick()
-  }, [])
-
-  // ── Send message ───────────────────────────────────────────────────────────
-  const sendOrahMessage = async (text?: string) => {
-    const msg = text || orahInput.trim()
-    if (!msg || orahLoading) return
-
-    const newMessages: OrahMessage[] = [...orahMessages, { role: 'user', content: msg }]
-    setOrahMessages(newMessages)
-    setOrahInput('')
-    if (orahInputRef.current) { orahInputRef.current.style.height = 'auto' }
-    setOrahLoading(true)
-
-    try {
-      const res = await fetch('/api/course-assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, courseId, courseName: course?.course_name, syllabus: course?.syllabus_text ?? null }),
-      })
-      if (!res.ok) throw new Error('Failed')
-      const data = await res.json()
-
-      const reply: string = data.reply || 'Sorry, I had trouble replying.'
-      const extras: Partial<OrahMessage> = {
-        isCheatsheet: data.isCheatsheet,
-        cheatsheetTitle: data.cheatsheetTitle,
-        isMath: data.isMath,
-        taskCreated: data.taskCreated ?? undefined,
-      }
-
-      const msgIndex = newMessages.length
-      setOrahMessages(prev => [...prev, { role: 'assistant', content: '' }])
-      setOrahLoading(false)
-
-      streamIntoMessage(reply, msgIndex, extras, () => {
-        if (data.action) {
-          const action = data.action
-          if (action.type === 'switch_tab') setTimeout(() => setActiveTab(action.tab as Tab), 600)
-          else if (action.type === 'navigate') {
-            const urlMap: Record<string, string> = {
-              assignment_helper: `/assignment-helper?courseId=${courseId}`,
-              exam_prep: `/exam-prep?courseId=${courseId}`,
-              lecture_notes: `/lecture-notes?courseId=${courseId}`,
-              semester_plan: `/courses/${courseId}/semester-plan`,
-              syllabus: `/courses/${courseId}/syllabus`,
-            }
-            const url = urlMap[action.page]
-            if (url) setTimeout(() => router.push(url), 1000)
-          }
-        }
-        // Refresh daily tasks if a new task was created
-        if (data.taskCreated) loadTabData(courseId, 'overview')
-      })
-    } catch {
-      setOrahLoading(false)
-      setOrahMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I had trouble connecting. Try again.' }])
-    }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -259,155 +160,12 @@ export default function CourseDashboardPage() {
   const courseColor = course.color || '#06B6D4'
   const dateDisp = formatDisplayDate(selectedDate)
 
-  const CHIPS = [
-    "What's due this week?",
-    "Show all recordings",
-    "What's missing from this course?",
-    "Make a cheatsheet",
-    "Create a practice quiz",
-    "Draw a concept map",
-    "Add a study task",
-    "Show my full schedule",
-  ]
-
   return (
     <>
       <Navigation />
 
       <div className="course-page-wrapper">
-
-        {/* ── Orah Sidebar ─────────────────────────────────────────────────── */}
-        <aside className={`orah-sidebar ${orahOpen ? 'orah-sidebar--open' : 'orah-sidebar--closed'}`}>
-          <div className="orah-sidebar-header" style={{ borderBottom: `1.5px solid ${courseColor}33` }}>
-            <div className="orah-brand">
-              <div className="orah-brand-icon" style={{ background: `${courseColor}22`, color: courseColor }}>O</div>
-              <div>
-                <div className="orah-brand-name">Orah</div>
-                <div className="orah-brand-sub">{course.course_name}</div>
-              </div>
-            </div>
-            <button className="orah-collapse-btn" onClick={() => setOrahOpen(false)} aria-label="Hide Orah">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
-            </button>
-          </div>
-
-          {/* Capability pills */}
-          <div className="orah-caps">
-            {['Recordings', 'Transcripts', 'Schedule', 'Cheatsheets', 'Math', 'Diagrams', 'Quizzes', 'HTML'].map(cap => (
-              <span key={cap} className="orah-cap-tag">{cap}</span>
-            ))}
-          </div>
-
-          {/* Messages */}
-          <div className="orah-messages">
-            {orahMessages.map((m, idx) => (
-              <div key={idx} className={`orah-msg orah-msg--${m.role}`}>
-                {m.role === 'assistant' && (
-                  <div className="orah-msg-avatar" style={{ color: courseColor }}>O</div>
-                )}
-                <div className={`orah-msg-bubble${m.isMath ? ' orah-msg-bubble--math' : ''}`}>
-                  {m.role === 'assistant'
-                    ? <MarkdownMessage content={m.content} isMath={m.isMath} />
-                    : <span>{m.content}</span>
-                  }
-
-                  {/* Task created confirmation */}
-                  {m.taskCreated && (
-                    <div className="orah-task-created">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                      <span>Task added: <strong>{m.taskCreated.title}</strong> on {m.taskCreated.date}</span>
-                    </div>
-                  )}
-
-                  {/* PDF download for cheatsheets */}
-                  {m.isCheatsheet && m.content.length > 20 && (
-                    <button
-                      className="orah-pdf-btn"
-                      style={{ borderColor: `${courseColor}55`, color: courseColor }}
-                      onClick={() => downloadCheatsheetPDF(m.cheatsheetTitle || 'Cheatsheet', m.content)}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                      </svg>
-                      Download PDF
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* Suggestion chips after greeting */}
-            {orahMessages.length === 1 && !orahLoading && (
-              <div className="orah-suggestions">
-                {CHIPS.map(chip => (
-                  <button
-                    key={chip}
-                    className="orah-chip"
-                    style={{ borderColor: `${courseColor}44`, color: courseColor }}
-                    onClick={() => sendOrahMessage(chip)}
-                  >
-                    {chip}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {orahLoading && (
-              <div className="orah-msg orah-msg--assistant">
-                <div className="orah-msg-avatar" style={{ color: courseColor }}>O</div>
-                <div className="orah-msg-bubble orah-typing"><span /><span /><span /></div>
-              </div>
-            )}
-            <div ref={orahEndRef} />
-          </div>
-
-          {/* Input */}
-          <div className="orah-input-row">
-            <textarea
-              ref={orahInputRef}
-              className="orah-input"
-              placeholder="Ask anything — diagrams, quizzes, math, cheatsheets…"
-              rows={1}
-              value={orahInput}
-              onChange={e => {
-                setOrahInput(e.target.value)
-                e.target.style.height = 'auto'
-                e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
-              }}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendOrahMessage() } }}
-              disabled={orahLoading}
-            />
-            <button
-              className="orah-send-btn"
-              onClick={() => sendOrahMessage()}
-              disabled={!orahInput.trim() || orahLoading}
-              style={{ background: courseColor }}
-              aria-label="Send"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2" fill="currentColor"/>
-              </svg>
-            </button>
-          </div>
-        </aside>
-
-        {/* ── Course Content ────────────────────────────────────────────────── */}
         <main className="course-main">
-          {!orahOpen && (
-            <button
-              className="orah-open-btn"
-              onClick={() => setOrahOpen(true)}
-              style={{ background: `${courseColor}18`, color: courseColor, borderColor: `${courseColor}44` }}
-              title="Open Orah"
-            >
-              <div className="orah-open-btn-icon">O</div>
-              <span>Orah</span>
-            </button>
-          )}
-
           <div className="course-inner">
             {/* Header */}
             <div className="course-header">

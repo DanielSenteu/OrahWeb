@@ -1,6 +1,29 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+
+interface EBState { hasError: boolean; message: string }
+export class OrahErrorBoundary extends React.Component<{ children: React.ReactNode }, EBState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false, message: '' }
+  }
+  static getDerivedStateFromError(err: Error): EBState {
+    return { hasError: true, message: err?.message || 'Render error' }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '0.5rem 0' }}>
+          ⚠ Could not render this message. <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', textDecoration: 'underline' }} onClick={() => this.setState({ hasError: false, message: '' })}>Retry</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
