@@ -174,7 +174,7 @@ export function QuizQuestion({ question, options }: { question: string; options:
 // ─── Markdown Parser ──────────────────────────────────────────────────────────
 
 export function renderInline(text: string): React.ReactNode {
-  if (!text) return null
+  if (!text || typeof text !== 'string') return null
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**') && part.length > 4)
@@ -206,6 +206,14 @@ export function parseTable(lines: string[]): React.ReactNode | null {
 
 export function MarkdownMessage({ content, isMath }: { content: string; isMath?: boolean }) {
   if (!content) return null
+  try {
+    return renderMarkdown(content, isMath)
+  } catch {
+    return <pre className="orah-md-fallback">{content}</pre>
+  }
+}
+
+function renderMarkdown(content: string, isMath?: boolean): React.ReactElement {
   const lines = content.split('\n')
   const elements: React.ReactNode[] = []
   let i = 0
@@ -289,11 +297,14 @@ export function MarkdownMessage({ content, isMath }: { content: string; isMath?:
     if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
       flushList()
       const tableLines: string[] = []
+      const iBeforeTable = i
       while (i < lines.length && (lines[i].trim().startsWith('|') || lines[i].trim().match(/^[\s|:-]+$/))) {
         tableLines.push(lines[i]); i++
       }
       const tableEl = parseTable(tableLines)
       if (tableEl) { elements.push(tableEl); continue }
+      // Table parse failed — restore i so the outer i++ only advances by 1
+      i = iBeforeTable
     }
 
     if (line.startsWith('# ')) { flushList(); elements.push(<h1 key={`h1-${i}`} className="orah-h1">{renderInline(line.slice(2))}</h1>) }
