@@ -324,8 +324,10 @@ export async function POST(req: Request) {
           notes: String(input.notes ?? ''),
           estimated_minutes: Number(input.estimated_minutes ?? 30),
           scheduled_date_key: dateKey,
-          status: 'pending',
-          created_by: 'orah',
+          status: 'notStarted',
+          is_completed: false,
+          day_number: (plan.plan_data?.tasks?.length ?? 0) + 1,
+          created_at: new Date().toISOString(),
         }
 
         const updatedTasks = [...(plan.plan_data?.tasks ?? []), newTask]
