@@ -1,8 +1,6 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -128,7 +126,7 @@ const detectAssignmentScale = (text: string) => {
   return 'small'
 }
 
-export default function AssignmentHelperPage() {
+function AssignmentHelperContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const assignmentId = searchParams.get('assignmentId')
@@ -912,5 +910,13 @@ For example:
         </div>
       </div>
     </>
+  )
+}
+
+export default function AssignmentHelperPage() {
+  return (
+    <Suspense>
+      <AssignmentHelperContent />
+    </Suspense>
   )
 }
