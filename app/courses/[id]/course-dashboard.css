@@ -797,3 +797,236 @@
   .item-card { flex-direction: column; }
   .item-card-right { flex-direction: row; align-items: center; }
 }
+
+/* ── Mermaid Diagram ── */
+.orah-diagram {
+  background: rgba(0,0,0,0.25);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 1rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+  text-align: center;
+}
+.orah-diagram svg { max-width: 100%; height: auto; }
+.orah-diagram-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 1.5rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+.orah-diagram-loading span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text-secondary);
+  animation: typingBounce 1.2s infinite;
+}
+.orah-diagram-loading span:nth-child(2) { animation-delay: 0.2s; }
+.orah-diagram-loading span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── SVG Renderer ── */
+.orah-svg-render {
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+  text-align: center;
+}
+.orah-svg-render svg { max-width: 100%; height: auto; }
+
+/* ── HTML Preview ── */
+.orah-html-preview {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 0.4rem 0;
+}
+.orah-html-preview--expanded .orah-html-iframe { height: 500px; }
+
+.orah-html-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.75rem;
+  background: rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.orah-html-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.orah-html-label svg { width: 13px; height: 13px; }
+.orah-html-toggle {
+  font-size: 0.7rem;
+  color: var(--primary-cyan);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.15rem 0.5rem;
+  border-radius: 5px;
+  font-family: inherit;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+.orah-html-toggle:hover { background: rgba(6,182,212,0.1); }
+.orah-html-iframe {
+  width: 100%;
+  height: 260px;
+  border: none;
+  display: block;
+  background: #fff;
+}
+
+/* ── Table ── */
+.orah-table-wrap {
+  overflow-x: auto;
+  margin: 0.4rem 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+}
+.orah-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  min-width: 280px;
+}
+.orah-table th {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary);
+  font-weight: 700;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.orah-table td {
+  padding: 0.45rem 0.75rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  line-height: 1.4;
+}
+.orah-table tr:last-child td { border-bottom: none; }
+.orah-table tr:hover td { background: rgba(255,255,255,0.025); }
+
+/* ── Quiz Block ── */
+.orah-quiz-block {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+.orah-quiz-header {
+  background: rgba(255,255,255,0.05);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.orah-quiz-q {
+  padding: 0.875rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.orah-quiz-q:last-child { border-bottom: none; }
+.orah-quiz-question {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.6rem;
+  line-height: 1.4;
+}
+.orah-quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.orah-quiz-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  text-align: left;
+  transition: all 0.18s;
+  font-family: inherit;
+  line-height: 1.4;
+}
+.orah-quiz-opt:hover:not(:disabled) { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+.orah-quiz-opt--selected { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
+.orah-quiz-opt--correct { border-color: #22c55e !important; background: rgba(34,197,94,0.1) !important; color: #22c55e !important; }
+.orah-quiz-opt--wrong { border-color: #ef4444 !important; background: rgba(239,68,68,0.1) !important; color: #ef4444 !important; }
+.orah-quiz-opt-marker { flex-shrink: 0; font-size: 0.75rem; margin-top: 1px; }
+.orah-quiz-reveal {
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.18s;
+}
+.orah-quiz-reveal:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+
+/* ── Task Created Toast ── */
+.orah-task-created {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+  padding: 0.45rem 0.75rem;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.25);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #22c55e;
+}
+.orah-task-created svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ── Blockquote ── */
+.orah-blockquote {
+  border-left: 3px solid var(--primary-cyan, #06B6D4);
+  padding: 0.3rem 0.75rem;
+  margin: 0.3rem 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-style: italic;
+  background: rgba(6,182,212,0.05);
+  border-radius: 0 6px 6px 0;
+}
+
+/* ── H4 ── */
+.orah-h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0.4rem 0 0.15rem;
+}
+
+/* ── Code lang label ── */
+.orah-code-lang-label {
+  display: block;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
+}

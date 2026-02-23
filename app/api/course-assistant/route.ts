@@ -14,12 +14,17 @@ type ToolName =
   | 'switch_tab'
   | 'mark_as_cheatsheet'
   | 'format_as_math'
+  | 'get_schedule'
+  | 'get_all_courses'
+  | 'create_task'
+  | 'get_course_inventory'
 
 const TOOLS: Anthropic.Tool[] = [
+  // ── Data access ──────────────────────────────────────────────────────────
   {
     name: 'get_assignments',
     description:
-      "Fetch all assignments for this course. Use when the student asks about assignments, due dates, upcoming work, or their assignment workload.",
+      'Fetch all assignments for this course including due dates and status. Use when asked about assignments, deadlines, workload, or upcoming work.',
     input_schema: { type: 'object' as const, properties: {}, required: [] },
   },
   {
@@ -31,14 +36,11 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: 'get_lecture_notes',
     description:
-      'Search through recorded lecture notes for a specific topic or keyword. Use when asked about lecture content, what was covered in class, or specific concepts.',
+      'Search through recorded lecture notes for a specific topic. Use when asked about lecture content, concepts covered in class, or specific topics.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        query: {
-          type: 'string',
-          description: 'The topic, concept, or keyword to search for in lecture notes',
-        },
+        query: { type: 'string', description: 'The topic, concept, or keyword to search for in lecture notes' },
       },
       required: ['query'],
     },
@@ -46,24 +48,61 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: 'get_all_recordings',
     description:
-      'Fetch all recorded lectures for this course including their notes and content. Use when asked about recordings, all lectures, or when gathering comprehensive course material for cheatsheets and study guides.',
+      'Fetch all recorded lectures for this course including their notes. Use when asked about recordings, all lectures, or when gathering content for a cheatsheet or study guide.',
     input_schema: { type: 'object' as const, properties: {}, required: [] },
   },
   {
     name: 'search_transcripts',
     description:
-      'Deep search across all lecture transcripts and generated notes for a specific topic. Use for finding specific concepts, formulas, or topics across all lectures — especially useful for building cheatsheets and study guides.',
+      'Deep search across all lecture transcripts and notes for a specific topic. Use for finding specific concepts, formulas, or topics across all lectures — especially useful for cheatsheets and study guides.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        query: {
-          type: 'string',
-          description: 'Topic, concept, formula, or keyword to search for across all lecture content',
-        },
+        query: { type: 'string', description: 'Topic, concept, formula, or keyword to search across all lecture content' },
       },
       required: ['query'],
     },
   },
+  {
+    name: 'get_schedule',
+    description:
+      "Fetch the student's upcoming study tasks and schedule across ALL their courses for the next N days. Use when asked about schedule, what to study this week, time management, or academic workload.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        days_ahead: { type: 'number', description: 'Number of days to look ahead (default 7, max 30)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_all_courses',
+    description:
+      "Fetch all courses the student is enrolled in. Use for cross-course planning, study load assessment, or when discussing overall academic workload.",
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
+    name: 'create_task',
+    description:
+      "Add a study task to the student's semester plan for this course. Use when the student asks Orah to schedule something, add a task, set up a study session, or create a reminder to study a topic.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string', description: 'Task title (short, actionable)' },
+        notes: { type: 'string', description: 'Task description or study notes' },
+        estimated_minutes: { type: 'number', description: 'Estimated time in minutes (default 30)' },
+        scheduled_date: { type: 'string', description: 'Date to schedule task in YYYY-MM-DD format (default: today)' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'get_course_inventory',
+    description:
+      "Get a complete inventory of what has been uploaded or recorded for this course — syllabus, lectures (recorded vs not), assignments, exams, and what is MISSING. Use when the student asks what's uploaded, what's missing, what they need to add, or to audit course completeness.",
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  // ── Navigation ───────────────────────────────────────────────────────────
   {
     name: 'navigate_to',
     description:
@@ -74,8 +113,6 @@ const TOOLS: Anthropic.Tool[] = [
         page: {
           type: 'string',
           enum: ['assignment_helper', 'exam_prep', 'lecture_notes', 'semester_plan', 'syllabus'],
-          description:
-            'assignment_helper: create a step-by-step plan for an assignment. exam_prep: create a study plan for an exam. lecture_notes: record or view a lecture. semester_plan: build a full semester schedule. syllabus: upload or view the syllabus.',
         },
       },
       required: ['page'],
@@ -84,29 +121,24 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: 'switch_tab',
     description:
-      'Switch the course dashboard to show a different tab. Use when the user asks to see assignments, exams, lectures, or the overview.',
+      'Switch the course dashboard to a different tab. Use when the user asks to see assignments, exams, lectures, or the overview.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        tab: {
-          type: 'string',
-          enum: ['overview', 'lectures', 'assignments', 'exams'],
-        },
+        tab: { type: 'string', enum: ['overview', 'lectures', 'assignments', 'exams'] },
       },
       required: ['tab'],
     },
   },
+  // ── Content signals ──────────────────────────────────────────────────────
   {
     name: 'mark_as_cheatsheet',
     description:
-      'Call this tool when you are about to create a cheatsheet, formula sheet, study guide, or reference document. This enables the student to download your response as a styled PDF. Always call this BEFORE writing the cheatsheet content.',
+      'Call BEFORE creating a cheatsheet, formula sheet, study guide, or reference document. This enables the student to download the response as a formatted PDF.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        title: {
-          type: 'string',
-          description: 'Title for the cheatsheet (e.g. "Calculus Midterm Cheatsheet")',
-        },
+        title: { type: 'string', description: 'Title for the cheatsheet' },
       },
       required: ['title'],
     },
@@ -114,12 +146,12 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: 'format_as_math',
     description:
-      'Call this tool when solving or presenting math problems, equations, or calculations. This enables enhanced math formatting so equations are displayed clearly.',
+      'Call BEFORE solving or presenting math problems, equations, or calculations. This enables enhanced math formatting in the response.',
     input_schema: { type: 'object' as const, properties: {}, required: [] },
   },
 ]
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function extractRelevantExcerpt(text: string | null, query: string): string {
   if (!text) return ''
@@ -131,7 +163,12 @@ function extractRelevantExcerpt(text: string | null, query: string): string {
   return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '')
 }
 
-// ── Route ────────────────────────────────────────────────────────────────────
+function todayKey(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -146,185 +183,301 @@ export async function POST(req: Request) {
     }
 
     const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // ── Course inventory (lightweight, always loaded) ────────────────────────
-    const [lectureCountRes, assignmentCountRes, examCountRes] = await Promise.all([
-      supabase
-        .from('course_lectures')
-        .select('id, processing_status', { count: 'exact', head: false })
-        .eq('course_id', courseId)
-        .eq('user_id', user.id),
-      supabase
-        .from('course_assignments')
-        .select('id', { count: 'exact', head: false })
-        .eq('course_id', courseId)
-        .eq('user_id', user.id),
-      supabase
-        .from('course_exams')
-        .select('id', { count: 'exact', head: false })
-        .eq('course_id', courseId)
-        .eq('user_id', user.id),
+    // ── Lightweight inventory for system prompt context ──────────────────────
+    const [lectureRes, assignmentRes, examRes] = await Promise.all([
+      supabase.from('course_lectures').select('id, processing_status').eq('course_id', courseId).eq('user_id', user.id),
+      supabase.from('course_assignments').select('id').eq('course_id', courseId).eq('user_id', user.id),
+      supabase.from('course_exams').select('id').eq('course_id', courseId).eq('user_id', user.id),
     ])
 
-    const lectureRows = lectureCountRes.data ?? []
-    const recordingsWithNotes = lectureRows.filter((l) => l.processing_status === 'completed').length
+    const lectureRows = lectureRes.data ?? []
+    const recordingsWithNotes = lectureRows.filter(l => l.processing_status === 'completed').length
     const totalLectures = lectureRows.length
-    const totalAssignments = assignmentCountRes.data?.length ?? 0
-    const totalExams = examCountRes.data?.length ?? 0
+    const totalAssignments = assignmentRes.data?.length ?? 0
+    const totalExams = examRes.data?.length ?? 0
 
-    // ── Tool execution ──────────────────────────────────────────────────────
-    const executeTool = async (name: ToolName, input: Record<string, string>) => {
+    // ── Tool execution ────────────────────────────────────────────────────────
+    let pendingAction: Record<string, unknown> | null = null
+    let isCheatsheet = false
+    let cheatsheetTitle = ''
+    let isMath = false
+    let taskCreated: { title: string; date: string } | null = null
+
+    const executeTool = async (name: ToolName, input: Record<string, string | number>) => {
+      // ── Assignments ──────────────────────────────────────────────────────
       if (name === 'get_assignments') {
         const { data } = await supabase
           .from('course_assignments')
           .select('id, assignment_name, due_date, status, description')
-          .eq('course_id', courseId)
-          .eq('user_id', user.id)
+          .eq('course_id', courseId).eq('user_id', user.id)
           .order('due_date', { ascending: true })
         return data ?? []
       }
 
+      // ── Exams ────────────────────────────────────────────────────────────
       if (name === 'get_exams') {
         const { data } = await supabase
           .from('course_exams')
           .select('id, exam_name, exam_date, status, topics')
-          .eq('course_id', courseId)
-          .eq('user_id', user.id)
+          .eq('course_id', courseId).eq('user_id', user.id)
           .order('exam_date', { ascending: true })
         return data ?? []
       }
 
+      // ── Lecture notes search ─────────────────────────────────────────────
       if (name === 'get_lecture_notes') {
         const { data } = await supabase
           .from('course_lectures')
           .select('id, title, lecture_date, generated_notes, week_number')
-          .eq('course_id', courseId)
-          .eq('user_id', user.id)
+          .eq('course_id', courseId).eq('user_id', user.id)
           .eq('processing_status', 'completed')
-
-        const q = (input.query ?? '').toLowerCase()
-        const relevant = (data ?? [])
-          .filter(
-            (l) =>
-              l.title?.toLowerCase().includes(q) || l.generated_notes?.toLowerCase().includes(q)
-          )
+        const q = String(input.query ?? '').toLowerCase()
+        return (data ?? [])
+          .filter(l => l.title?.toLowerCase().includes(q) || l.generated_notes?.toLowerCase().includes(q))
           .slice(0, 3)
-
-        return relevant.map((l) => ({
-          id: l.id,
-          title: l.title,
-          date: l.lecture_date,
-          notes_excerpt: extractRelevantExcerpt(l.generated_notes, q),
-        }))
+          .map(l => ({ id: l.id, title: l.title, date: l.lecture_date, notes_excerpt: extractRelevantExcerpt(l.generated_notes, q) }))
       }
 
+      // ── All recordings ───────────────────────────────────────────────────
       if (name === 'get_all_recordings') {
         const { data } = await supabase
           .from('course_lectures')
           .select('id, title, lecture_date, week_number, generated_notes, audio_url, processing_status')
-          .eq('course_id', courseId)
-          .eq('user_id', user.id)
+          .eq('course_id', courseId).eq('user_id', user.id)
           .order('lecture_date', { ascending: true })
-
-        return (data ?? []).map((l) => ({
-          id: l.id,
-          title: l.title,
-          date: l.lecture_date,
-          week: l.week_number,
-          has_recording: !!l.audio_url,
-          has_notes: l.processing_status === 'completed',
+        return (data ?? []).map(l => ({
+          id: l.id, title: l.title, date: l.lecture_date, week: l.week_number,
+          has_recording: !!l.audio_url, has_notes: l.processing_status === 'completed',
           notes_summary: l.generated_notes ? l.generated_notes.slice(0, 1200) : null,
         }))
       }
 
+      // ── Deep transcript search ───────────────────────────────────────────
       if (name === 'search_transcripts') {
         const { data } = await supabase
           .from('course_lectures')
           .select('id, title, lecture_date, generated_notes, week_number')
-          .eq('course_id', courseId)
+          .eq('course_id', courseId).eq('user_id', user.id)
+        const q = String(input.query ?? '').toLowerCase()
+        return (data ?? [])
+          .filter(l => l.title?.toLowerCase().includes(q) || l.generated_notes?.toLowerCase().includes(q))
+          .slice(0, 6)
+          .map(l => ({ title: l.title, date: l.lecture_date, week: l.week_number, relevant_excerpt: extractRelevantExcerpt(l.generated_notes, q) }))
+      }
+
+      // ── Schedule ─────────────────────────────────────────────────────────
+      if (name === 'get_schedule') {
+        const daysAhead = Math.min(Number(input.days_ahead ?? 7), 30)
+        const today = new Date(); today.setHours(0, 0, 0, 0)
+
+        const { data: plans } = await supabase
+          .from('course_semester_plans')
+          .select('id, course_id, plan_data, courses(course_name, color)')
           .eq('user_id', user.id)
 
-        const q = (input.query ?? '').toLowerCase()
-        const results = (data ?? [])
-          .filter(
-            (l) =>
-              l.title?.toLowerCase().includes(q) || l.generated_notes?.toLowerCase().includes(q)
-          )
-          .slice(0, 6)
-          .map((l) => ({
-            title: l.title,
-            date: l.lecture_date,
-            week: l.week_number,
-            relevant_excerpt: extractRelevantExcerpt(l.generated_notes, q),
-          }))
+        const upcoming: Record<string, any[]> = {}
+        for (let i = 0; i < daysAhead; i++) {
+          const d = new Date(today); d.setDate(d.getDate() + i)
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          const dayTasks: any[] = []
+          for (const plan of plans ?? []) {
+            const tasks = (plan.plan_data?.tasks ?? []).filter((t: any) => t.scheduled_date_key === key)
+            tasks.forEach((t: any) => dayTasks.push({
+              course: (plan.courses as any)?.course_name ?? 'Unknown',
+              title: t.title, estimated_minutes: t.estimated_minutes ?? 0, status: t.status ?? 'pending',
+            }))
+          }
+          if (dayTasks.length > 0) upcoming[key] = dayTasks
+        }
+        return upcoming
+      }
 
-        return results
+      // ── All courses ──────────────────────────────────────────────────────
+      if (name === 'get_all_courses') {
+        const { data } = await supabase
+          .from('courses')
+          .select('id, course_name, professor_name, semester, year, color')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+        return data ?? []
+      }
+
+      // ── Create task ──────────────────────────────────────────────────────
+      if (name === 'create_task') {
+        const { data: plan } = await supabase
+          .from('course_semester_plans')
+          .select('id, plan_data')
+          .eq('course_id', courseId).eq('user_id', user.id)
+          .single()
+
+        if (!plan) {
+          return { success: false, message: 'No semester plan found for this course. Ask the student to create one first at the Semester Plan page.' }
+        }
+
+        const dateKey = String(input.scheduled_date ?? todayKey())
+        const newTask = {
+          id: `orah-${Date.now()}`,
+          title: String(input.title),
+          notes: String(input.notes ?? ''),
+          estimated_minutes: Number(input.estimated_minutes ?? 30),
+          scheduled_date_key: dateKey,
+          status: 'pending',
+          created_by: 'orah',
+        }
+
+        const updatedTasks = [...(plan.plan_data?.tasks ?? []), newTask]
+        await supabase
+          .from('course_semester_plans')
+          .update({ plan_data: { ...plan.plan_data, tasks: updatedTasks } })
+          .eq('id', plan.id)
+
+        taskCreated = { title: newTask.title, date: dateKey }
+        return { success: true, task: newTask }
+      }
+
+      // ── Course inventory ─────────────────────────────────────────────────
+      if (name === 'get_course_inventory') {
+        const [lecturesR, assignmentsR, examsR, courseR, planR] = await Promise.all([
+          supabase.from('course_lectures').select('id, title, lecture_date, audio_url, processing_status').eq('course_id', courseId).eq('user_id', user.id).order('lecture_date', { ascending: true }),
+          supabase.from('course_assignments').select('id, assignment_name, due_date, status').eq('course_id', courseId).eq('user_id', user.id),
+          supabase.from('course_exams').select('id, exam_name, exam_date, status').eq('course_id', courseId).eq('user_id', user.id),
+          supabase.from('courses').select('syllabus_text, course_name').eq('id', courseId).single(),
+          supabase.from('course_semester_plans').select('id').eq('course_id', courseId).eq('user_id', user.id).single(),
+        ])
+
+        const lectures = lecturesR.data ?? []
+        const recorded = lectures.filter(l => !!l.audio_url)
+        const withNotes = lectures.filter(l => l.processing_status === 'completed')
+        const unrecorded = lectures.filter(l => !l.audio_url)
+
+        const missing: string[] = []
+        if (!courseR.data?.syllabus_text) missing.push('Syllabus not uploaded → go to Syllabus page')
+        if (!planR.data) missing.push('No semester plan created → go to Semester Plan page')
+        if (unrecorded.length > 0) missing.push(`${unrecorded.length} lecture(s) not recorded → go to Lecture Notes page`)
+        if (lectures.length === 0) missing.push('No lectures added yet → upload syllabus to auto-populate or go to Lecture Notes')
+
+        return {
+          syllabus: { uploaded: !!courseR.data?.syllabus_text },
+          semester_plan: { created: !!planR.data },
+          lectures: {
+            total: lectures.length, recorded: recorded.length, with_notes: withNotes.length,
+            unrecorded_titles: unrecorded.map(l => l.title || 'Untitled'),
+          },
+          assignments: {
+            total: assignmentsR.data?.length ?? 0,
+            list: (assignmentsR.data ?? []).map(a => ({ name: a.assignment_name, due: a.due_date, status: a.status })),
+          },
+          exams: {
+            total: examsR.data?.length ?? 0,
+            list: (examsR.data ?? []).map(e => ({ name: e.exam_name, date: e.exam_date, status: e.status })),
+          },
+          missing_items: missing,
+          completeness_score: `${Math.round((
+            (courseR.data?.syllabus_text ? 25 : 0) +
+            (planR.data ? 20 : 0) +
+            (recorded.length > 0 ? Math.min(30, recorded.length * 5) : 0) +
+            ((assignmentsR.data?.length ?? 0) > 0 ? 15 : 0) +
+            ((examsR.data?.length ?? 0) > 0 ? 10 : 0)
+          ))}%`,
+        }
       }
 
       return null
     }
 
-    // ── System prompt ───────────────────────────────────────────────────────
-    const systemPrompt = `You are Orah, a powerful AI study assistant built directly into the course dashboard for **${courseName || 'this course'}**.
+    // ── System prompt ─────────────────────────────────────────────────────────
+    const systemPrompt = `You are **Orah**, a powerful AI study assistant embedded in the course dashboard for **${courseName || 'this course'}**.
 
-You have live access to ALL of this course's data through tools:
-- **${totalLectures} lectures** (${recordingsWithNotes} with full recorded notes/transcripts)
-- **${totalAssignments} assignments**
-- **${totalExams} exams**
-${syllabus ? `- **Syllabus**: available\n\nSyllabus context:\n${syllabus.slice(0, 1500)}` : '- Syllabus: not yet uploaded'}
+You have live access to ALL of this course's data:
+- **${totalLectures} lectures** (${recordingsWithNotes} with notes/transcripts)
+- **${totalAssignments} assignments** | **${totalExams} exams**
+${syllabus ? `- **Syllabus**: uploaded\n\nSyllabus context:\n${syllabus.slice(0, 1500)}` : '- **Syllabus**: not yet uploaded'}
 
-## Your Capabilities
+---
 
-**Data Access** — use tools proactively:
-- Questions about assignments/due dates → call \`get_assignments\`
-- Questions about exams/tests/midterms/finals → call \`get_exams\`
-- Questions about lecture content/concepts → call \`get_lecture_notes\` with the topic
-- Show all recordings and notes → call \`get_all_recordings\`
-- Deep search for a topic across all lectures → call \`search_transcripts\`
+## Tools Available — Use Proactively
 
-**Actions**:
-- User wants to create an assignment plan → call \`navigate_to\` with "assignment_helper"
-- User wants to create an exam study plan → call \`navigate_to\` with "exam_prep"
-- User wants to record a lecture → call \`navigate_to\` with "lecture_notes"
-- User wants semester plan → call \`navigate_to\` with "semester_plan"
-- User asks to see a section (assignments, exams, lectures) → call \`switch_tab\`
+| Question Type | Tool |
+|---|---|
+| Assignments / due dates | get_assignments |
+| Exams / midterms / finals | get_exams |
+| Lecture content / concepts | get_lecture_notes |
+| All recordings / notes | get_all_recordings |
+| Search across all transcripts | search_transcripts |
+| Schedule / what to study this week | get_schedule |
+| All enrolled courses / workload | get_all_courses |
+| What's uploaded / what's missing | get_course_inventory |
+| Create assignment plan → | navigate_to: assignment_helper |
+| Create exam study plan → | navigate_to: exam_prep |
+| Record a lecture → | navigate_to: lecture_notes |
+| Create semester plan → | navigate_to: semester_plan |
+| Add a task to schedule | create_task |
+| See a section of the dashboard | switch_tab |
+| Creating cheatsheet/study guide | mark_as_cheatsheet (call FIRST, then write content) |
+| Math problems / equations | format_as_math (call FIRST, then solve) |
 
-**Content Generation**:
-- Cheatsheets / formula sheets / study guides / reference docs → first call \`mark_as_cheatsheet\` with the title, THEN write the full content in rich markdown
-- Math problems / equations / calculations → first call \`format_as_math\`, then solve step by step with clear notation
+---
 
-## Response Style
-- Use **rich markdown**: headers (##, ###), bold (**), bullet lists (- ), numbered lists, code blocks (\`\`\`)
-- For cheatsheets: be comprehensive, organized, and printable — use headers, sections, and bullet points
-- For math: show each step clearly, use proper mathematical notation, align equations
-- For regular answers: be concise but thorough — 2-5 sentences or a short list
-- You are as powerful as any AI assistant — handle any request confidently`
+## Content Capabilities — Use Freely
 
-    // ── Build message list ───────────────────────────────────────────────────
-    const apiMessages: Anthropic.MessageParam[] = messages.map(
-      (m: { role: string; content: string }) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })
-    )
-    const firstUser = apiMessages.findIndex((m) => m.role === 'user')
-    let loopMessages: Anthropic.MessageParam[] =
-      firstUser >= 0 ? apiMessages.slice(firstUser) : apiMessages
+You can generate rich, formatted content. Always use appropriate formatting:
 
-    // ── Agentic tool-use loop (max 8 rounds) ────────────────────────────────
+### Diagrams (auto-rendered in the UI)
+Write diagrams inside \`\`\`mermaid code blocks. Examples:
+- Flowcharts: \`graph TD; A-->B; B-->C\`
+- Mind maps: \`mindmap; root((Topic)); Branch1; Branch2\`
+- Timelines: \`timeline; section Week 1; Task A : 2024-01-01\`
+- Sequence diagrams: \`sequenceDiagram; A->>B: message\`
+- Pie charts: \`pie; "A" : 30; "B" : 70\`
+- Gantt charts for study plans
+
+### SVG Graphics (auto-rendered)
+Write SVG in \`\`\`svg blocks for custom visual diagrams, concept maps, geometric figures.
+
+### HTML Previews (auto-rendered with live preview)
+Write HTML in \`\`\`html blocks for rich documents, flashcard sets, formatted tables, interactive previews.
+
+### Markdown
+- **Bold**, *italic*, \`code\`, headers (##, ###)
+- Tables: | col1 | col2 | (always include header row + separator row)
+- Numbered lists, bullet lists
+
+### Interactive Quizzes
+Format quiz questions with checkboxes to create interactive quiz cards:
+\`\`\`
+**Q:** Question text?
+- [ ] Wrong option
+- [x] Correct option
+- [ ] Wrong option
+\`\`\`
+The UI renders these as clickable cards with reveal buttons.
+
+---
+
+## Response Rules
+- **Be powerful**: match the quality of Claude/ChatGPT — comprehensive, formatted, well-structured
+- **Use diagrams** when explaining processes, relationships, timelines, or comparisons
+- **Use tables** for structured data, comparisons, schedules
+- **Use quizzes** when someone asks to be tested or wants practice questions
+- **For cheatsheets**: use \`mark_as_cheatsheet\` then write comprehensive, printable markdown with clear sections
+- **For math**: use \`format_as_math\` then show each step clearly with proper notation
+- **Never truncate** — give complete, full responses`
+
+    // ── Build message list ────────────────────────────────────────────────────
+    const apiMessages: Anthropic.MessageParam[] = messages.map((m: { role: string; content: string }) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
+    const firstUser = apiMessages.findIndex(m => m.role === 'user')
+    let loopMessages: Anthropic.MessageParam[] = firstUser >= 0 ? apiMessages.slice(firstUser) : apiMessages
+
+    // ── Agentic tool-use loop (max 10 rounds) ────────────────────────────────
     let finalReply = ''
-    let pendingAction: Record<string, unknown> | null = null
-    let isCheatsheet = false
-    let cheatsheetTitle = ''
-    let isMath = false
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 10; i++) {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 4096,
@@ -336,7 +489,7 @@ ${syllabus ? `- **Syllabus**: available\n\nSyllabus context:\n${syllabus.slice(0
       if (response.stop_reason === 'end_turn') {
         finalReply = response.content
           .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-          .map((b) => b.text)
+          .map(b => b.text)
           .join('')
         break
       }
@@ -349,9 +502,8 @@ ${syllabus ? `- **Syllabus**: available\n\nSyllabus context:\n${syllabus.slice(0
 
         for (const block of assistantContent) {
           if (block.type !== 'tool_use') continue
-
           const toolName = block.name as ToolName
-          const input = block.input as Record<string, string>
+          const input = block.input as Record<string, string | number>
           let result: unknown
 
           if (toolName === 'navigate_to') {
@@ -362,39 +514,29 @@ ${syllabus ? `- **Syllabus**: available\n\nSyllabus context:\n${syllabus.slice(0
             result = { success: true }
           } else if (toolName === 'mark_as_cheatsheet') {
             isCheatsheet = true
-            cheatsheetTitle = input.title || 'Cheatsheet'
-            result = { success: true, message: 'Cheatsheet mode enabled. Now write the comprehensive cheatsheet content in markdown.' }
+            cheatsheetTitle = String(input.title || 'Cheatsheet')
+            result = { success: true, message: 'Cheatsheet mode enabled. Write comprehensive markdown content.' }
           } else if (toolName === 'format_as_math') {
             isMath = true
-            result = { success: true, message: 'Math formatting enabled. Present the solution step by step with clear notation.' }
+            result = { success: true, message: 'Math mode enabled. Present step-by-step solution with clear notation.' }
           } else {
             result = await executeTool(toolName, input)
           }
 
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: JSON.stringify(result),
-          })
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
         }
 
         loopMessages = [...loopMessages, { role: 'user', content: toolResults }]
       } else {
         finalReply = response.content
           .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-          .map((b) => b.text)
+          .map(b => b.text)
           .join('')
         break
       }
     }
 
-    return NextResponse.json({
-      reply: finalReply,
-      action: pendingAction,
-      isCheatsheet,
-      cheatsheetTitle,
-      isMath,
-    })
+    return NextResponse.json({ reply: finalReply, action: pendingAction, isCheatsheet, cheatsheetTitle, isMath, taskCreated })
   } catch (error) {
     console.error('Course assistant error:', error)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
