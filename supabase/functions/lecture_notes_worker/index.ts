@@ -32,12 +32,13 @@ serve(async (req) => {
     })
   }
 
+  const body = await req.json().catch(() => ({}))
+  const jobId = body.jobId
+
   try {
     const dbSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    
+
     // Get pending jobs (or specific job ID from request)
-    const body = await req.json().catch(() => ({}))
-    const jobId = body.jobId
 
     let jobs: any[] = []
 
@@ -296,9 +297,6 @@ serve(async (req) => {
 
     // Try to update job status to failed
     try {
-      const body = await req.json().catch(() => ({}))
-      const jobId = body.jobId
-      
       if (jobId) {
         const dbSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         await dbSupabase
@@ -377,7 +375,7 @@ Make these notes so comprehensive that students can ace exams AND complete homew
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 8000,
+      max_tokens: 16000,
       system: notesPrompt,
       messages: [
         {
@@ -386,8 +384,6 @@ Make these notes so comprehensive that students can ace exams AND complete homew
         },
       ],
       temperature: 0.7,
-      max_tokens: 16000,
-      response_format: { type: "json_object" },
     }),
   })
 
@@ -397,7 +393,7 @@ Make these notes so comprehensive that students can ace exams AND complete homew
   }
 
   const notesData = await notesResponse.json()
-  const notesContent = notesData.choices[0]?.message?.content
+  const notesContent = notesData.content?.[0]?.text
 
   if (!notesContent) {
     throw new Error("Failed to generate notes")
