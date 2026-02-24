@@ -64,11 +64,12 @@ export function loadMermaid(): Promise<void> {
   })
 }
 
-export function MermaidDiagram({ code }: { code: string }) {
+export function MermaidDiagram({ code, isComplete = true }: { code: string; isComplete?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading')
 
   useEffect(() => {
+    if (!isComplete) return
     let cancelled = false
     const id = `mermaid-${Math.random().toString(36).slice(2)}`
     const render = async () => {
@@ -88,7 +89,7 @@ export function MermaidDiagram({ code }: { code: string }) {
     }
     render()
     return () => { cancelled = true }
-  }, [code])
+  }, [code, isComplete])
 
   if (status === 'error') {
     return <pre className="orah-code-block"><code className="orah-code-lang-label">mermaid</code><code>{code}</code></pre>
@@ -262,7 +263,8 @@ function renderMarkdown(content: string, isMath?: boolean): React.ReactElement {
         i++
       }
       const code = codeLines.join('\n')
-      if (lang === 'mermaid') elements.push(<MermaidDiagram key={`md-${i}`} code={code} />)
+      const isComplete = i < lines.length
+      if (lang === 'mermaid') elements.push(<MermaidDiagram key={`md-${i}`} code={code} isComplete={isComplete} />)
       else if (lang === 'svg') elements.push(<SvgRenderer key={`svg-${i}`} code={code} />)
       else if (lang === 'html') elements.push(<HtmlPreview key={`html-${i}`} code={code} />)
       else elements.push(
