@@ -863,7 +863,21 @@
   overflow: hidden;
   margin: 0.4rem 0;
 }
-.orah-html-preview--expanded .orah-html-iframe { height: 500px; }
+.orah-html-preview--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  border-radius: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  margin: 0;
+}
+.orah-html-preview--fullscreen .orah-html-iframe {
+  flex: 1;
+  height: 100%;
+}
 
 .orah-html-bar {
   display: flex;

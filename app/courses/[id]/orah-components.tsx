@@ -103,7 +103,10 @@ export function MermaidDiagram({ code, isComplete = true }: { code: string; isCo
 
 // ─── SVG Renderer ─────────────────────────────────────────────────────────────
 
-export function SvgRenderer({ code }: { code: string }) {
+export function SvgRenderer({ code, isComplete = true }: { code: string; isComplete?: boolean }) {
+  if (!isComplete) {
+    return <div className="orah-diagram"><div className="orah-diagram-loading"><span /><span /><span /> Generating…</div></div>
+  }
   const clean = code
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')
@@ -112,8 +115,32 @@ export function SvgRenderer({ code }: { code: string }) {
 
 // ─── HTML Preview ─────────────────────────────────────────────────────────────
 
-export function HtmlPreview({ code }: { code: string }) {
+export function HtmlPreview({ code, isComplete = true }: { code: string; isComplete?: boolean }) {
   const [expanded, setExpanded] = useState(false)
+
+  const bar = (
+    <div className="orah-html-bar">
+      <span className="orah-html-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        HTML Preview
+      </span>
+      {isComplete && (
+        <button className="orah-html-toggle" onClick={() => setExpanded(e => !e)}>
+          {expanded ? '✕ Exit Fullscreen' : 'Fullscreen'}
+        </button>
+      )}
+    </div>
+  )
+
+  if (!isComplete) {
+    return (
+      <div className="orah-html-preview">
+        {bar}
+        <div className="orah-diagram-loading" style={{ height: '80px' }}><span /><span /><span /> Generating…</div>
+      </div>
+    )
+  }
+
   const srcdoc = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
     body{margin:1rem;font-family:system-ui,sans-serif;font-size:13px;color:#111;line-height:1.6}
     *{box-sizing:border-box}
@@ -124,18 +151,11 @@ export function HtmlPreview({ code }: { code: string }) {
     code{background:#f5f5f5;padding:2px 5px;border-radius:3px;font-size:0.9em}
     pre{background:#f5f5f5;padding:10px;border-radius:5px;overflow-x:auto}
   </style></head><body>${code}</body></html>`
+
   return (
-    <div className={`orah-html-preview${expanded ? ' orah-html-preview--expanded' : ''}`}>
-      <div className="orah-html-bar">
-        <span className="orah-html-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          HTML Preview
-        </span>
-        <button className="orah-html-toggle" onClick={() => setExpanded(e => !e)}>
-          {expanded ? 'Collapse' : 'Expand'}
-        </button>
-      </div>
-      <iframe srcDoc={srcdoc} sandbox="allow-same-origin" className="orah-html-iframe" title="HTML Preview" />
+    <div className={`orah-html-preview${expanded ? ' orah-html-preview--fullscreen' : ''}`}>
+      {bar}
+      <iframe srcDoc={srcdoc} sandbox="allow-scripts" className="orah-html-iframe" title="HTML Preview" />
     </div>
   )
 }
@@ -265,8 +285,8 @@ function renderMarkdown(content: string, isMath?: boolean): React.ReactElement {
       const code = codeLines.join('\n')
       const isComplete = i < lines.length
       if (lang === 'mermaid') elements.push(<MermaidDiagram key={`md-${i}`} code={code} isComplete={isComplete} />)
-      else if (lang === 'svg') elements.push(<SvgRenderer key={`svg-${i}`} code={code} />)
-      else if (lang === 'html') elements.push(<HtmlPreview key={`html-${i}`} code={code} />)
+      else if (lang === 'svg') elements.push(<SvgRenderer key={`svg-${i}`} code={code} isComplete={isComplete} />)
+      else if (lang === 'html') elements.push(<HtmlPreview key={`html-${i}`} code={code} isComplete={isComplete} />)
       else elements.push(
         <pre key={`code-${i}`} className="orah-code-block">
           {lang && <span className="orah-code-lang-label">{lang}</span>}
