@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -25,6 +25,14 @@ interface QaMessage {
 }
 
 export default function LectureNotesPage() {
+  return (
+    <Suspense>
+      <LectureNotesContent />
+    </Suspense>
+  )
+}
+
+function LectureNotesContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const courseId = searchParams.get('courseId')
