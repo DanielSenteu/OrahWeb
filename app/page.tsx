@@ -4,11 +4,20 @@ import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { posthog } from '@/lib/posthog'
+import { createClient } from '@/lib/supabase/client'
 import './landing.css'
 
 export default function LandingPage() {
   const router = useRouter()
   const floatingCardRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // Redirect logged-in users straight to courses
+    const supabase = createClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace('/courses')
+    })
+  }, [router])
 
   useEffect(() => {
     // Send a test event when landing page loads

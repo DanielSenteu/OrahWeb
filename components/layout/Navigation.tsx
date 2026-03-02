@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import './Navigation.css'
 
 // Only Courses and Schedule live in the pill — everything else in the drawer
@@ -143,8 +144,16 @@ const drawerItems = [
 
 export default function Navigation() {
   const pathname = usePathname()
+  const router = useRouter()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [user, setUser] = useState<{ email?: string | null } | null>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
+  }, [])
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20)
@@ -152,9 +161,10 @@ export default function Navigation() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Close drawer on route change
+  // Close drawer and profile on route change
   useEffect(() => {
     setDrawerOpen(false)
+    setProfileOpen(false)
   }, [pathname])
 
   // Prevent body scroll when drawer open
@@ -163,10 +173,28 @@ export default function Navigation() {
     return () => { document.body.style.overflow = '' }
   }, [drawerOpen])
 
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    setUser(null)
+    setProfileOpen(false)
+    router.push('/')
+  }
+
+  const userInitial = user?.email?.[0]?.toUpperCase() ?? '?'
+
   const currentPage = [...navItems, ...drawerItems].find(i => i.href === pathname)
 
   return (
     <>
+      {/* Transparent overlay to close profile popup */}
+      {profileOpen && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 2500 }}
+          onClick={() => setProfileOpen(false)}
+        />
+      )}
+
       {/* ── Floating Pill ── Desktop */}
       <nav className={`pill-nav ${scrolled ? 'pill-nav--scrolled' : ''}`}>
         <div className="pill-inner">
@@ -209,6 +237,40 @@ export default function Navigation() {
               <line x1="3" y1="18" x2="15" y2="18" />
             </svg>
           </button>
+
+          {/* Profile avatar */}
+          {user && (
+            <>
+              <div className="pill-divider" />
+              <div className="pill-profile-wrapper">
+                <button
+                  className="pill-avatar"
+                  onClick={() => setProfileOpen(!profileOpen)}
+                  aria-label="Profile"
+                >
+                  {userInitial}
+                </button>
+
+                {profileOpen && (
+                  <div className="profile-popup">
+                    <div className="profile-popup-avatar">{userInitial}</div>
+                    <div className="profile-popup-email">{user.email}</div>
+                    <div className="profile-popup-divider" />
+                    <Link
+                      href="/profile"
+                      className="profile-popup-link"
+                      onClick={() => setProfileOpen(false)}
+                    >
+                      View Profile
+                    </Link>
+                    <button className="profile-popup-logout" onClick={handleLogout}>
+                      Log out
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </nav>
 
@@ -241,6 +303,38 @@ export default function Navigation() {
           </span>
           <span className="mobile-tab-label">More</span>
         </button>
+
+        {/* Mobile profile avatar */}
+        {user && (
+          <div className="pill-profile-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <button
+              className="mobile-tab"
+              onClick={() => setProfileOpen(!profileOpen)}
+              aria-label="Profile"
+            >
+              <span className="mobile-avatar-bubble">{userInitial}</span>
+              <span className="mobile-tab-label">Profile</span>
+            </button>
+
+            {profileOpen && (
+              <div className="profile-popup profile-popup--mobile">
+                <div className="profile-popup-avatar">{userInitial}</div>
+                <div className="profile-popup-email">{user.email}</div>
+                <div className="profile-popup-divider" />
+                <Link
+                  href="/profile"
+                  className="profile-popup-link"
+                  onClick={() => setProfileOpen(false)}
+                >
+                  View Profile
+                </Link>
+                <button className="profile-popup-logout" onClick={handleLogout}>
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* ── Slide-out Drawer ── */}
