@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Navigation from '@/components/layout/Navigation'
@@ -25,6 +26,8 @@ interface QaMessage {
 
 export default function LectureNotesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const courseId = searchParams.get('courseId')
   const supabase = createClient()
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -130,6 +133,7 @@ export default function LectureNotesPage() {
           definitions: notes.definitions,
           source_type: sourceType,
           original_content: originalContent,
+          course_id: courseId || null,
         })
         .select()
         .single()
@@ -362,6 +366,7 @@ export default function LectureNotesPage() {
             source_type: 'recorded',
             original_content: '',
             processing_status: 'pending',
+            course_id: courseId || null,
           })
           .select()
           .single()
@@ -466,6 +471,7 @@ export default function LectureNotesPage() {
           source_type: 'recorded',
           original_content: '',
           processing_status: 'pending',
+          course_id: courseId || null,
         })
         .select()
         .single()

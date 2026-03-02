@@ -14,80 +14,50 @@ interface Course {
   semester: string | null
   year: number | null
   color: string
+  syllabus_text: string | null
 }
 
 type Tab = 'overview' | 'lectures' | 'assignments' | 'exams'
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function CourseDashboardPage() {
   const router = useRouter()
   const params = useParams()
   const courseId = params.id as string
   const supabase = createClient()
-  
+
   const [course, setCourse] = useState<Course | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [loading, setLoading] = useState(true)
-  
-  // Data for each tab
   const [semesterPlan, setSemesterPlan] = useState<any>(null)
   const [lectures, setLectures] = useState<any[]>([])
   const [assignments, setAssignments] = useState<any[]>([])
   const [exams, setExams] = useState<any[]>([])
   const [dataLoading, setDataLoading] = useState(false)
-  
-  // Day navigation for Overview tab
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [dailyTasks, setDailyTasks] = useState<any[]>([])
 
   useEffect(() => {
-    if (courseId) {
-      loadCourse()
-    }
+    if (courseId) loadCourse()
   }, [courseId])
+
+  useEffect(() => { if (courseId && course) loadTabData(courseId, activeTab) }, [activeTab, courseId])
+
+  useEffect(() => {
+    if (activeTab === 'overview' && semesterPlan?.plan_data?.tasks) filterTasksForDate(selectedDate)
+  }, [selectedDate, semesterPlan, activeTab])
+
 
   const loadCourse = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
-      }
-
-      const { data, error } = await supabase
-        .from('courses')
-        .select('*')
-        .eq('id', courseId)
-        .eq('user_id', user.id)
-        .single()
-
-      if (error) {
-        console.error('Error loading course:', error)
-        router.push('/courses')
-        return
-      }
-
-      setCourse(data)
-      setLoading(false)
-      
-      // Load data for active tab
-      loadTabData(data.id, activeTab)
-    } catch (error) {
-      console.error('Error loading course:', error)
-      setLoading(false)
-    }
+      if (!user) { router.push('/login'); return }
+      const { data, error } = await supabase.from('courses').select('*').eq('id', courseId).eq('user_id', user.id).single()
+      if (error) { router.push('/courses'); return }
+      setCourse(data); setLoading(false); loadTabData(data.id, activeTab)
+    } catch { setLoading(false) }
   }
-
-  useEffect(() => {
-    if (courseId && course) {
-      loadTabData(courseId, activeTab)
-    }
-  }, [activeTab, courseId])
-
-  useEffect(() => {
-    if (activeTab === 'overview' && semesterPlan?.plan_data?.tasks) {
-      filterTasksForDate(selectedDate)
-    }
-  }, [selectedDate, semesterPlan, activeTab])
 
   const loadTabData = async (id: string, tab: Tab) => {
     setDataLoading(true)
@@ -96,233 +66,81 @@ export default function CourseDashboardPage() {
       if (!user) return
 
       if (tab === 'overview') {
-        // Load semester plan
-        const { data: plan } = await supabase
-          .from('course_semester_plans')
-          .select('*')
-          .eq('course_id', id)
-          .eq('user_id', user.id)
-          .single()
-        
+        const { data: plan } = await supabase.from('course_semester_plans').select('*').eq('course_id', id).eq('user_id', user.id).single()
         setSemesterPlan(plan)
       } else if (tab === 'lectures') {
-        // Load lectures
-        const { data: lecturesData } = await supabase
-          .from('course_lectures')
-          .select('*')
-          .eq('course_id', id)
-          .eq('user_id', user.id)
-          .order('lecture_date', { ascending: false })
-        
-        setLectures(lecturesData || [])
+        const { data } = await supabase.from('course_lectures').select('*').eq('course_id', id).eq('user_id', user.id).order('lecture_date', { ascending: true })
+        setLectures(data || [])
       } else if (tab === 'assignments') {
-        // Load assignments
-        const { data: assignmentsData } = await supabase
-          .from('course_assignments')
-          .select('*')
-          .eq('course_id', id)
-          .eq('user_id', user.id)
-          .order('due_date', { ascending: true })
-        
-        setAssignments(assignmentsData || [])
+        const { data } = await supabase.from('course_assignments').select('*').eq('course_id', id).eq('user_id', user.id).order('due_date', { ascending: true })
+        setAssignments(data || [])
       } else if (tab === 'exams') {
-        // Load exams
-        const { data: examsData } = await supabase
-          .from('course_exams')
-          .select('*')
-          .eq('course_id', id)
-          .eq('user_id', user.id)
-          .order('exam_date', { ascending: true })
-        
-        // For each exam, check if a goal/plan exists
-        const examsWithPlanStatus = await Promise.all(
+        const { data: examsData } = await supabase.from('course_exams').select('*').eq('course_id', id).eq('user_id', user.id).order('exam_date', { ascending: true })
+        const examsWithPlan = await Promise.all(
           (examsData || []).map(async (exam) => {
-            console.log(`🔍 Checking plan for exam: ${exam.exam_name} (${exam.id})`)
-            
-            // Check if there's a goal for this exam (by exam_id)
-            const { data: goalData, error: goalError } = await supabase
-              .from('user_goals')
-              .select('id')
-              .eq('user_id', user.id)
-              .eq('exam_id', exam.id)
-              .eq('goal_type', 'exam')
-              .maybeSingle()
-            
-            console.log(`  Goal by exam_id:`, goalData, goalError)
-            
-            // Also check if goal summary contains exam name (fallback for old goals or if exam_id not set)
-            let goalDataFallback = null
-            if (!goalData) {
-              // Try exact match first
-              const { data: exactMatch } = await supabase
-                .from('user_goals')
-                .select('id')
-                .eq('user_id', user.id)
-                .ilike('summary', `Exam: ${exam.exam_name}`)
-                .maybeSingle()
-              
-              if (exactMatch) {
-                goalDataFallback = exactMatch
-                console.log(`  Goal by exact summary match:`, exactMatch)
-              } else {
-                // Try partial match
-                const { data: partialMatch } = await supabase
-                  .from('user_goals')
-                  .select('id')
-                  .eq('user_id', user.id)
-                  .ilike('summary', `%${exam.exam_name}%`)
-                  .maybeSingle()
-                
-                console.log(`  Goal by partial summary match:`, partialMatch)
-                goalDataFallback = partialMatch
-              }
+            const { data: goalData } = await supabase.from('user_goals').select('id').eq('user_id', user.id).eq('exam_id', exam.id).maybeSingle()
+            let finalGoal = goalData
+            if (!finalGoal) {
+              const { data: match } = await supabase.from('user_goals').select('id').eq('user_id', user.id).ilike('summary', `%${exam.exam_name}%`).maybeSingle()
+              finalGoal = match
             }
-            
-            const finalGoalData = goalData || goalDataFallback
-            console.log(`  ✅ Final goal data for ${exam.exam_name}:`, finalGoalData, `hasPlan: ${!!finalGoalData}`)
-            
-            // If goal exists, get the first task
             let firstTaskId = null
-            if (finalGoalData) {
-              const { data: taskData } = await supabase
-                .from('task_items')
-                .select('id')
-                .eq('goal_id', finalGoalData.id)
-                .eq('user_id', user.id)
-                .order('day_number', { ascending: true })
-                .limit(1)
-                .maybeSingle()
-              
-              if (taskData) {
-                firstTaskId = taskData.id
-              }
+            if (finalGoal) {
+              const { data: taskData } = await supabase.from('task_items').select('id').eq('goal_id', finalGoal.id).order('day_number', { ascending: true }).limit(1).maybeSingle()
+              firstTaskId = taskData?.id || null
             }
-            
-            const hasPlan = !!finalGoalData
-            console.log(`  ✅ Exam ${exam.exam_name}: hasPlan=${hasPlan}, firstTaskId=${firstTaskId}`)
-            
-            return {
-              ...exam,
-              hasPlan,
-              firstTaskId
-            }
+            return { ...exam, hasPlan: !!finalGoal, firstTaskId }
           })
         )
-        
-        setExams(examsWithPlanStatus)
+        setExams(examsWithPlan)
       }
-    } catch (error) {
-      console.error('Error loading tab data:', error)
-    } finally {
-      setDataLoading(false)
-    }
+    } catch (e) { console.error('Error loading tab data:', e) }
+    finally { setDataLoading(false) }
   }
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(word => word[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
-  }
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const getInitials = (name: string) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+  const getSemesterDisplay = () => course?.semester && course?.year ? `${course.semester} ${course.year}` : ''
 
-  const getSemesterDisplay = () => {
-    if (course?.semester && course?.year) {
-      return `${course.semester} ${course.year}`
-    }
-    return 'No semester set'
-  }
-
-  // Format date as YYYY-MM-DD
   const formatDateKey = (date: Date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   }
 
-  // Filter tasks for selected date
   const filterTasksForDate = (date: Date) => {
-    if (!semesterPlan?.plan_data?.tasks) {
-      setDailyTasks([])
-      return
-    }
-
-    const dateKey = formatDateKey(date)
-    const tasks = semesterPlan.plan_data.tasks.filter(
-      (task: any) => task.scheduled_date_key === dateKey
-    )
-    setDailyTasks(tasks || [])
+    if (!semesterPlan?.plan_data?.tasks) { setDailyTasks([]); return }
+    setDailyTasks(semesterPlan.plan_data.tasks.filter((t: any) => t.scheduled_date_key === formatDateKey(date)) || [])
   }
 
-  // Navigate between days
-  const navigateDate = (direction: 'prev' | 'next') => {
-    const newDate = new Date(selectedDate)
-    newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1))
-    setSelectedDate(newDate)
+  const navigateDate = (dir: 'prev' | 'next') => {
+    const d = new Date(selectedDate); d.setDate(d.getDate() + (dir === 'next' ? 1 : -1)); setSelectedDate(d)
   }
 
-  // Format display date
   const formatDisplayDate = (date: Date) => {
     const today = new Date()
-    const isToday = date.toDateString() === today.toDateString()
-    
-    if (isToday) {
-      return {
-        label: 'Today',
-        value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-      }
-    }
-    
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const isTomorrow = date.toDateString() === tomorrow.toDateString()
-    
-    if (isTomorrow) {
-      return {
-        label: 'Tomorrow',
-        value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-      }
-    }
-    
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
-    const isYesterday = date.toDateString() === yesterday.toDateString()
-    
-    if (isYesterday) {
-      return {
-        label: 'Yesterday',
-        value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-      }
-    }
-    
-    return {
-      label: date.toLocaleDateString('en-US', { weekday: 'long' }),
-      value: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    }
+    if (date.toDateString() === today.toDateString()) return { label: 'Today', value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) }
+    const tmrw = new Date(today); tmrw.setDate(today.getDate() + 1)
+    if (date.toDateString() === tmrw.toDateString()) return { label: 'Tomorrow', value: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) }
+    return { label: date.toLocaleDateString('en-US', { weekday: 'long' }), value: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
   }
 
-  const calculateProgress = () => {
-    if (dailyTasks.length === 0) return 0
-    const completed = dailyTasks.filter((t: any) => t.is_completed).length
-    return Math.round((completed / dailyTasks.length) * 100)
+  const getStatusBadge = (s: string) => s === 'completed' ? 'status-completed' : (s === 'in_progress' || s === 'studying') ? 'status-inprogress' : 'status-pending'
+  const isUpcoming = (d: string | null) => !!d && new Date(d) > new Date()
+  const daysUntil = (d: string | null) => {
+    if (!d) return null
+    const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000)
+    if (diff < 0) return null
+    if (diff === 0) return 'Today'
+    if (diff === 1) return 'Tomorrow'
+    return `${diff}d`
   }
 
   if (loading) {
     return (
       <>
         <Navigation />
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          minHeight: '100vh',
-          flexDirection: 'column',
-          gap: '1rem'
-        }}>
-          <div className="spinner" style={{ width: '40px', height: '40px' }}></div>
-          <p style={{ color: 'var(--text-secondary)' }}>Loading course...</p>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', flexDirection: 'column', gap: '1rem' }}>
+          <div className="spinner" style={{ width: '40px', height: '40px' }} />
+          <p style={{ color: 'var(--text-secondary)' }}>Loading course…</p>
         </div>
       </>
     )
@@ -333,492 +151,312 @@ export default function CourseDashboardPage() {
       <>
         <Navigation />
         <div className="course-dashboard-container">
-          <div className="course-error">
-            <h2>Course not found</h2>
-            <Link href="/courses" className="btn-primary">Back to Courses</Link>
-          </div>
+          <div className="course-error"><h2>Course not found</h2><Link href="/courses" className="btn-primary">Back to Courses</Link></div>
         </div>
       </>
     )
   }
 
+  const courseColor = course.color || '#06B6D4'
+  const dateDisp = formatDisplayDate(selectedDate)
+
   return (
     <>
       <Navigation />
-      <div className="course-dashboard-container">
-        {/* Course Header */}
-        <div className="course-header">
-          <div className="course-header-content">
-            <Link href="/courses" className="back-link">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="15 18 9 12 15 6"></polyline>
-              </svg>
-              Back to Courses
-            </Link>
-            <div className="course-title-section">
-              <div 
-                className="course-header-icon"
-                style={{ backgroundColor: `${course.color || '#06B6D4'}20` }}
-              >
-                {getInitials(course.course_name)}
-              </div>
-              <div>
-                <h1 className="course-dashboard-title">{course.course_name}</h1>
-                {course.professor_name && (
-                  <p className="course-professor">{course.professor_name}</p>
-                )}
-                <p className="course-semester">{getSemesterDisplay()}</p>
+
+      <div className="course-page-wrapper">
+        <main className="course-main">
+          <div className="course-inner">
+            {/* Header */}
+            <div className="course-header">
+              <div className="course-header-content">
+                <Link href="/courses" className="back-link">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                  Back to Courses
+                </Link>
+                <div className="course-title-section">
+                  <div className="course-header-icon" style={{ background: `${courseColor}22`, color: courseColor }}>
+                    {getInitials(course.course_name)}
+                  </div>
+                  <div>
+                    <h1 className="course-dashboard-title">{course.course_name}</h1>
+                    {course.professor_name && <p className="course-professor">{course.professor_name}</p>}
+                    {getSemesterDisplay() && <p className="course-semester">{getSemesterDisplay()}</p>}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Tabs */}
-        <div className="course-tabs">
-          <button
-            className={`course-tab ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            Overview
-          </button>
-          <button
-            className={`course-tab ${activeTab === 'lectures' ? 'active' : ''}`}
-            onClick={() => setActiveTab('lectures')}
-          >
-            Lectures
-          </button>
-          <button
-            className={`course-tab ${activeTab === 'assignments' ? 'active' : ''}`}
-            onClick={() => setActiveTab('assignments')}
-          >
-            Assignments
-          </button>
-          <button
-            className={`course-tab ${activeTab === 'exams' ? 'active' : ''}`}
-            onClick={() => setActiveTab('exams')}
-          >
-            Exams
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        <div className="course-content">
-          {activeTab === 'overview' && (
-            <div className="tab-panel">
-              <div className="tab-panel-header">
-                <h2 className="tab-panel-title">Course Overview</h2>
-                {!semesterPlan && (
-                  <Link 
-                    href={`/courses/${courseId}/semester-plan`}
-                    className="btn-primary-small"
+            {/* Tabs */}
+            <div className="course-tabs-row">
+              <div className="course-tabs">
+                {(['overview', 'lectures', 'assignments', 'exams'] as Tab[]).map(tab => (
+                  <button
+                    key={tab}
+                    className={`course-tab ${activeTab === tab ? 'active' : ''}`}
+                    onClick={() => setActiveTab(tab)}
+                    style={{ '--tab-color': courseColor } as React.CSSProperties}
                   >
-                    Create Semester Plan
-                  </Link>
-                )}
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tab === 'assignments' && assignments.length > 0 && <span className="tab-count">{assignments.length}</span>}
+                    {tab === 'exams' && exams.length > 0 && <span className="tab-count">{exams.length}</span>}
+                    {tab === 'lectures' && lectures.length > 0 && <span className="tab-count">{lectures.length}</span>}
+                  </button>
+                ))}
               </div>
-              
-              {dataLoading ? (
-                <div className="tab-loading">
-                  <div className="spinner" style={{ width: '32px', height: '32px' }}></div>
-                  <p>Loading...</p>
-                </div>
-              ) : semesterPlan ? (
-                <div className="overview-content">
-                  {/* Semester Plan Stats */}
-                  <div className="overview-card">
-                    <h3 className="overview-card-title">Semester Plan</h3>
-                    <div className="overview-stats">
-                      <div className="stat-item">
-                        <div className="stat-label">Study Hours/Day</div>
-                        <div className="stat-value">{semesterPlan.study_hours_per_day || 2}h</div>
-                      </div>
-                      <div className="stat-item">
-                        <div className="stat-label">Preferred Times</div>
-                        <div className="stat-value">
-                          {semesterPlan.preferred_study_times?.join(', ') || 'Not set'}
+              <button
+                className="orah-fullpage-btn"
+                style={{ '--btn-color': courseColor } as React.CSSProperties}
+                onClick={() => router.push(`/courses/${courseId}/orah`)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                Open Orah
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="course-content">
+
+              {/* ── Overview ── */}
+              {activeTab === 'overview' && (
+                <div className="tab-panel">
+                  {dataLoading ? (
+                    <div className="tab-loading"><div className="spinner" style={{ width: '32px', height: '32px' }} /><p>Loading…</p></div>
+                  ) : semesterPlan ? (
+                    <div className="overview-content">
+                      <div className="overview-card">
+                        <h3 className="overview-card-title">Semester Plan</h3>
+                        <div className="overview-stats">
+                          <div className="stat-item"><div className="stat-label">Study Hours/Day</div><div className="stat-value" style={{ color: courseColor }}>{semesterPlan.study_hours_per_day || 2}h</div></div>
+                          <div className="stat-item"><div className="stat-label">Study Times</div><div className="stat-value">{semesterPlan.preferred_study_times?.join(', ') || 'Flexible'}</div></div>
+                          <div className="stat-item"><div className="stat-label">Assignments</div><div className="stat-value" style={{ color: courseColor }}>{assignments.length || '—'}</div></div>
+                          <div className="stat-item"><div className="stat-label">Exams</div><div className="stat-value" style={{ color: courseColor }}>{exams.length || '—'}</div></div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Daily Tasks with Day Navigation */}
-                  {semesterPlan.plan_data?.tasks && semesterPlan.plan_data.tasks.length > 0 && (
-                    <div className="daily-tasks-section">
-                      {/* Date Navigation */}
-                      <div className="date-nav">
-                        <button className="date-nav-btn" onClick={() => navigateDate('prev')}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="15 18 9 12 15 6"/>
-                          </svg>
-                          Previous
-                        </button>
-
-                        <div className="current-date">
-                          <div className="date-label">{formatDisplayDate(selectedDate).label}</div>
-                          <div className="date-value">{formatDisplayDate(selectedDate).value}</div>
-                        </div>
-
-                        <button className="date-nav-btn" onClick={() => navigateDate('next')}>
-                          Next
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="9 18 15 12 9 6"/>
-                          </svg>
-                        </button>
-                      </div>
-
-                      {/* Tasks List */}
-                      {dailyTasks.length === 0 ? (
-                        <div className="tab-empty">
-                          <div className="tab-empty-icon">📅</div>
-                          <h3>No Tasks Scheduled</h3>
-                          <p>No tasks are scheduled for this day.</p>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="tasks-list">
-                            {dailyTasks.map((task: any, index: number) => (
-                              <div 
-                                key={task.id || index} 
-                                className="task-card"
-                              >
-                                <div className="task-header">
-                                  <div className="task-icon">
-                                    <svg viewBox="0 0 24 24" fill="none">
-                                      <polyline points="16 18 22 12 16 6"/>
-                                      <polyline points="8 6 2 12 8 18"/>
-                                    </svg>
-                                  </div>
-                                  <div className="task-info">
-                                    <h2 className="task-title">{task.title}</h2>
-                                    {task.notes && (
-                                      <p className="task-description">{task.notes}</p>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="task-meta-row">
-                                  <div className="task-meta-item">
-                                    <svg viewBox="0 0 24 24" fill="none">
-                                      <circle cx="12" cy="12" r="10"/>
-                                      <polyline points="12 6 12 12 16 14"/>
-                                    </svg>
-                                    <span><span className="task-meta-value">{task.estimated_minutes || 0} min</span></span>
-                                  </div>
-                                  {task.day_number && (
-                                    <div className="task-meta-item">
-                                      <span className="day-badge">📅 Day {task.day_number}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Progress Bar */}
-                          <div className="progress-section">
-                            <div className="progress-container">
-                              <div className="progress-label-section">
-                                <div className="progress-label">Today&apos;s Progress</div>
-                                <div className="progress-value">{calculateProgress()}%</div>
-                              </div>
-                              <div className="progress-bar-wrapper">
-                                <div className="progress-bar">
-                                  <div 
-                                    className="progress-fill" 
-                                    style={{ 
-                                      width: `${calculateProgress()}%`,
-                                      transition: 'width 1s cubic-bezier(0.16, 1, 0.3, 1)'
-                                    }}
-                                  ></div>
-                                </div>
-                              </div>
+                      {semesterPlan.plan_data?.tasks?.length > 0 && (
+                        <div className="daily-tasks-section">
+                          <div className="date-nav">
+                            <button className="date-nav-btn" onClick={() => navigateDate('prev')}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>Prev
+                            </button>
+                            <div className="current-date">
+                              <div className="date-label">{dateDisp.label}</div>
+                              <div className="date-value">{dateDisp.value}</div>
                             </div>
+                            <button className="date-nav-btn" onClick={() => navigateDate('next')}>
+                              Next<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                            </button>
                           </div>
-                        </>
+                          {dailyTasks.length === 0 ? (
+                            <div className="tab-empty"><div className="tab-empty-icon">📅</div><h3>No Tasks Scheduled</h3><p>No tasks for this day.</p></div>
+                          ) : (
+                            <div className="tasks-list">
+                              {dailyTasks.map((task: any, i: number) => (
+                                <div key={task.id || i} className="task-card">
+                                  <div className="task-header">
+                                    <div className="task-icon" style={{ background: `${courseColor}22` }}>
+                                      <svg viewBox="0 0 24 24" fill="none" stroke={courseColor} strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                                    </div>
+                                    <div className="task-info">
+                                      <h2 className="task-title">{task.title}</h2>
+                                      {task.notes && <p className="task-description">{task.notes}</p>}
+                                    </div>
+                                  </div>
+                                  <div className="task-meta-row">
+                                    <div className="task-meta-item">
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                      <span className="task-meta-value">{task.estimated_minutes || 0} min</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       )}
+                    </div>
+                  ) : (
+                    <div className="tab-empty">
+                      <div className="tab-empty-icon">📅</div>
+                      <h3>No Semester Plan Yet</h3>
+                      <p>Create a personalized semester plan to organize your study schedule.</p>
+                      <Link href={`/courses/${courseId}/semester-plan`} className="btn-primary">Create Semester Plan</Link>
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="tab-empty">
-                  <div className="tab-empty-icon">📅</div>
-                  <h3>No Semester Plan Yet</h3>
-                  <p>Create a personalized semester plan to organize your study schedule.</p>
-                  <Link 
-                    href={`/courses/${courseId}/semester-plan`}
-                    className="btn-primary"
-                  >
-                    Create Semester Plan
-                  </Link>
-                </div>
               )}
-            </div>
-          )}
 
-          {activeTab === 'lectures' && (
-            <div className="tab-panel">
-              <div className="tab-panel-header">
-                <h2 className="tab-panel-title">Lectures</h2>
-                <Link 
-                  href={`/lecture-notes?courseId=${courseId}`}
-                  className="btn-primary-small"
-                >
-                  Record Lecture
-                </Link>
-              </div>
-              
-              {dataLoading ? (
-                <div className="tab-loading">
-                  <div className="spinner" style={{ width: '32px', height: '32px' }}></div>
-                  <p>Loading...</p>
-                </div>
-              ) : lectures.length > 0 ? (
-                <>
-                  <div className="lectures-list">
-                    {lectures.map((lecture) => (
-                      <div key={lecture.id} className="lecture-card">
-                        <div className="lecture-header">
-                          <div>
-                            <h3>{lecture.title || `Lecture ${lecture.week_number ? `Week ${lecture.week_number}` : ''}`}</h3>
-                            {lecture.lecture_date && (
-                              <p className="lecture-date">
-                                📅 {new Date(lecture.lecture_date).toLocaleDateString('en-US', { 
-                                  weekday: 'long', 
-                                  year: 'numeric', 
-                                  month: 'long', 
-                                  day: 'numeric' 
-                                })}
-                              </p>
-                            )}
-                            {lecture.week_number && (
-                              <p className="lecture-week">Week {lecture.week_number}</p>
-                            )}
+              {/* ── Lectures ── */}
+              {activeTab === 'lectures' && (
+                <div className="tab-panel">
+                  <div className="tab-panel-header">
+                    <h2 className="tab-panel-title">Lectures</h2>
+                    <Link href={`/lecture-notes?courseId=${courseId}`} className="btn-primary-small">+ Record Lecture</Link>
+                  </div>
+                  {dataLoading ? (
+                    <div className="tab-loading"><div className="spinner" style={{ width: '32px', height: '32px' }} /><p>Loading…</p></div>
+                  ) : lectures.length > 0 ? (
+                    <div className="items-list">
+                      {lectures.map(lecture => (
+                        <div key={lecture.id} className="item-card">
+                          <div className="item-card-left">
+                            <div className="item-card-dot" style={{ background: courseColor }} />
+                            <div>
+                              <div className="item-card-title">{lecture.title || `Lecture${lecture.week_number ? ` – Week ${lecture.week_number}` : ''}`}</div>
+                              {lecture.lecture_date && (
+                                <div className="item-card-sub">
+                                  {new Date(lecture.lecture_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                  {lecture.week_number && ` · Week ${lecture.week_number}`}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div className="lecture-status-badge">
-                            {lecture.processing_status === 'completed' && lecture.generated_notes && (
-                              <span className="status-completed">✅ Notes Ready</span>
-                            )}
-                            {lecture.processing_status === 'processing' && (
-                              <span className="status-processing">⏳ Processing...</span>
-                            )}
-                            {lecture.processing_status === 'pending' && !lecture.audio_url && (
-                              <span className="status-pending">⏸️ Not Recorded</span>
-                            )}
-                            {lecture.processing_status === 'pending' && lecture.audio_url && (
-                              <span className="status-pending">⏸️ Pending</span>
-                            )}
+                          <div className="item-card-right">
+                            {lecture.processing_status === 'completed' && lecture.generated_notes
+                              ? <span className="status-pill status-completed">Notes Ready</span>
+                              : lecture.processing_status === 'processing'
+                                ? <span className="status-pill status-inprogress">Processing…</span>
+                                : <span className="status-pill status-pending">Not Recorded</span>
+                            }
+                            <Link href={`/lecture-notes?courseId=${courseId}&lectureId=${lecture.id}`} className="item-action-btn" style={{ '--btn-color': courseColor } as React.CSSProperties}>
+                              {lecture.audio_url ? 'View Notes' : 'Record'}
+                            </Link>
                           </div>
                         </div>
-                        <div className="lecture-actions">
-                          <Link 
-                            href={`/lecture-notes?courseId=${courseId}&lectureId=${lecture.id}`}
-                            className="btn-lecture-action"
-                          >
-                            {lecture.audio_url ? 'View/Edit Notes' : 'Record Lecture'}
-                          </Link>
-                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="tab-empty">
+                      <div className="tab-empty-icon">🎙️</div>
+                      <h3>No Lectures Yet</h3>
+                      <p>Upload your syllabus to populate the lecture schedule, or record manually.</p>
+                      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        {!course.syllabus_text && <Link href={`/courses/${courseId}/syllabus`} className="btn-primary">Upload Syllabus</Link>}
+                        <Link href={`/lecture-notes?courseId=${courseId}`} className="btn-secondary-action">Record Lecture</Link>
                       </div>
-                    ))}
-                  </div>
-                  <div className="section-footer">
-                    <Link 
-                      href={`/lecture-notes?courseId=${courseId}`}
-                      className="btn-primary"
-                    >
-                      Record New Lecture
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                <div className="tab-empty">
-                  <div className="tab-empty-icon">🎙️</div>
-                  <h3>No Lectures Yet</h3>
-                  <p>Lectures will appear here once extracted from your syllabus, or you can record them manually.</p>
-                  <Link 
-                    href={`/lecture-notes?courseId=${courseId}`}
-                    className="btn-primary"
-                  >
-                    Record Your First Lecture
-                  </Link>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {activeTab === 'assignments' && (
-            <div className="tab-panel">
-              <div className="tab-panel-header">
-                <h2 className="tab-panel-title">Assignments</h2>
-                <Link 
-                  href={`/assignment-helper?courseId=${courseId}`}
-                  className="btn-primary-small"
-                >
-                  Add Assignment
-                </Link>
-              </div>
-              
-              {dataLoading ? (
-                <div className="tab-loading">
-                  <div className="spinner" style={{ width: '32px', height: '32px' }}></div>
-                  <p>Loading...</p>
-                </div>
-              ) : assignments.length > 0 ? (
-                <>
-                  <div className="assignments-list">
-                    {assignments.map((assignment) => (
-                      <div key={assignment.id} className="assignment-card">
-                        <div className="assignment-header">
-                          <div>
-                            <h3>{assignment.assignment_name}</h3>
-                            {assignment.due_date && (
-                              <p className="assignment-due">
-                                📅 Due: {new Date(assignment.due_date).toLocaleDateString('en-US', { 
-                                  weekday: 'long', 
-                                  year: 'numeric', 
-                                  month: 'long', 
-                                  day: 'numeric' 
-                                })}
-                              </p>
-                            )}
-                            {assignment.description && (
-                              <p className="assignment-description">{assignment.description}</p>
-                            )}
-                          </div>
-                          <span className={`assignment-status ${assignment.status}`}>
-                            {assignment.status?.replace('_', ' ') || 'not started'}
-                          </span>
-                        </div>
-                        <div className="assignment-actions">
-                          <Link 
-                            href={`/assignment-helper?courseId=${courseId}&assignmentId=${assignment.id}`}
-                            className="btn-assignment-action"
-                          >
-                            {assignment.step_by_step_plan ? 'View Plan' : 'Create Plan'}
-                          </Link>
-                        </div>
-                      </div>
-                    ))}
+              {/* ── Assignments ── */}
+              {activeTab === 'assignments' && (
+                <div className="tab-panel">
+                  <div className="tab-panel-header">
+                    <h2 className="tab-panel-title">Assignments</h2>
+                    <Link href={`/assignment-helper?courseId=${courseId}`} className="btn-primary-small">+ Add Assignment</Link>
                   </div>
-                  <div className="section-footer">
-                    <Link 
-                      href={`/assignment-helper?courseId=${courseId}`}
-                      className="btn-primary"
-                    >
-                      Add New Assignment
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                <div className="tab-empty">
-                  <div className="tab-empty-icon">📝</div>
-                  <h3>No Assignments Yet</h3>
-                  <p>Assignments will appear here once extracted from your syllabus, or you can add them manually.</p>
-                  <Link 
-                    href={`/assignment-helper?courseId=${courseId}`}
-                    className="btn-primary"
-                  >
-                    Add Your First Assignment
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'exams' && (
-            <div className="tab-panel">
-              <div className="tab-panel-header">
-                <h2 className="tab-panel-title">Exams</h2>
-                <Link 
-                  href={`/exam-prep?courseId=${courseId}`}
-                  className="btn-primary-small"
-                >
-                  Add Exam
-                </Link>
-              </div>
-              
-              {dataLoading ? (
-                <div className="tab-loading">
-                  <div className="spinner" style={{ width: '32px', height: '32px' }}></div>
-                  <p>Loading...</p>
-                </div>
-              ) : exams.length > 0 ? (
-                <>
-                  <div className="exams-list">
-                    {exams.map((exam) => (
-                      <div key={exam.id} className="exam-card">
-                        <div className="exam-header">
-                          <div>
-                            <h3>{exam.exam_name}</h3>
-                            {exam.exam_date && (
-                              <p className="exam-date">
-                                📅 Date: {new Date(exam.exam_date).toLocaleDateString('en-US', { 
-                                  weekday: 'long', 
-                                  year: 'numeric', 
-                                  month: 'long', 
-                                  day: 'numeric' 
-                                })}
-                              </p>
-                            )}
-                            {exam.topics && exam.topics.length > 0 && (
-                              <div className="exam-topics">
-                                <strong>Topics:</strong> {exam.topics.join(', ')}
+                  {dataLoading ? (
+                    <div className="tab-loading"><div className="spinner" style={{ width: '32px', height: '32px' }} /><p>Loading…</p></div>
+                  ) : assignments.length > 0 ? (
+                    <div className="items-list">
+                      {assignments.map(a => {
+                        const due = daysUntil(a.due_date)
+                        const upcoming = isUpcoming(a.due_date)
+                        return (
+                          <div key={a.id} className="item-card">
+                            <div className="item-card-left">
+                              <div className="item-card-dot" style={{ background: upcoming ? courseColor : '#6b7280' }} />
+                              <div>
+                                <div className="item-card-title">{a.assignment_name}</div>
+                                {a.due_date && (
+                                  <div className="item-card-sub">
+                                    Due {new Date(a.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {due && <span className="due-chip" style={{ background: `${courseColor}22`, color: courseColor }}>{due}</span>}
+                                  </div>
+                                )}
+                                {a.description && <div className="item-card-desc">{a.description}</div>}
                               </div>
-                            )}
+                            </div>
+                            <div className="item-card-right">
+                              <span className={`status-pill ${getStatusBadge(a.status)}`}>{(a.status || 'not started').replace('_', ' ')}</span>
+                              <Link href={a.step_by_step_plan ? `/schedule` : `/assignment-helper?courseId=${courseId}&assignmentId=${a.id}`} className={`item-action-btn ${a.step_by_step_plan ? 'item-action-primary' : ''}`} style={{ '--btn-color': courseColor } as React.CSSProperties}>
+                                {a.step_by_step_plan ? 'Go to Plan' : 'Create Plan'}
+                              </Link>
+                            </div>
                           </div>
-                          <span className={`exam-status ${exam.status}`}>
-                            {exam.status?.replace('_', ' ') || 'not started'}
-                          </span>
-                        </div>
-                        <div className="exam-actions">
-                          {exam.hasPlan ? (
-                            <Link 
-                              href={`/courses/${courseId}/exams/${exam.id}/study`}
-                              className="btn-exam-action"
-                              style={{
-                                background: 'linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-pink) 100%)',
-                                color: 'white',
-                                fontWeight: 600
-                              }}
-                            >
-                              Start Studying
-                            </Link>
-                          ) : (
-                            <Link 
-                              href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`}
-                              className="btn-exam-action"
-                            >
-                              Create Study Plan
-                            </Link>
-                          )}
-                        </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="tab-empty">
+                      <div className="tab-empty-icon">📝</div>
+                      <h3>No Assignments Yet</h3>
+                      <p>Upload your syllabus to extract assignments, or add them manually.</p>
+                      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        {!course.syllabus_text && <Link href={`/courses/${courseId}/syllabus`} className="btn-primary">Upload Syllabus</Link>}
+                        <Link href={`/assignment-helper?courseId=${courseId}`} className="btn-secondary-action">Add Assignment</Link>
                       </div>
-                    ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Exams ── */}
+              {activeTab === 'exams' && (
+                <div className="tab-panel">
+                  <div className="tab-panel-header">
+                    <h2 className="tab-panel-title">Exams</h2>
+                    <Link href={`/exam-prep?courseId=${courseId}`} className="btn-primary-small">+ Add Exam</Link>
                   </div>
-                  <div className="section-footer">
-                    <Link 
-                      href={`/exam-prep?courseId=${courseId}`}
-                      className="btn-primary"
-                    >
-                      Add New Exam
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                <div className="tab-empty">
-                  <div className="tab-empty-icon">📚</div>
-                  <h3>No Exams Yet</h3>
-                  <p>Exams will appear here once extracted from your syllabus, or you can add them manually.</p>
-                  <Link 
-                    href={`/exam-prep?courseId=${courseId}`}
-                    className="btn-primary"
-                  >
-                    Add Your First Exam
-                  </Link>
+                  {dataLoading ? (
+                    <div className="tab-loading"><div className="spinner" style={{ width: '32px', height: '32px' }} /><p>Loading…</p></div>
+                  ) : exams.length > 0 ? (
+                    <div className="items-list">
+                      {exams.map(exam => {
+                        const due = daysUntil(exam.exam_date)
+                        const upcoming = isUpcoming(exam.exam_date)
+                        return (
+                          <div key={exam.id} className="item-card">
+                            <div className="item-card-left">
+                              <div className="item-card-dot" style={{ background: upcoming ? courseColor : '#6b7280' }} />
+                              <div>
+                                <div className="item-card-title">{exam.exam_name}</div>
+                                {exam.exam_date && (
+                                  <div className="item-card-sub">
+                                    {new Date(exam.exam_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' })}
+                                    {due && <span className="due-chip" style={{ background: `${courseColor}22`, color: courseColor }}>{due}</span>}
+                                  </div>
+                                )}
+                                {exam.topics?.length > 0 && (
+                                  <div className="item-card-topics">
+                                    {exam.topics.slice(0, 4).map((t: string, i: number) => (
+                                      <span key={i} className="topic-tag">{t}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="item-card-right">
+                              <span className={`status-pill ${getStatusBadge(exam.status)}`}>{(exam.status || 'not started').replace('_', ' ')}</span>
+                              {exam.hasPlan ? (
+                                <Link href={`/courses/${courseId}/exams/${exam.id}/study`} className="item-action-btn item-action-primary" style={{ '--btn-color': courseColor } as React.CSSProperties}>Go to Plan</Link>
+                              ) : (
+                                <Link href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`} className="item-action-btn" style={{ '--btn-color': courseColor } as React.CSSProperties}>Create Study Plan</Link>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="tab-empty">
+                      <div className="tab-empty-icon">📚</div>
+                      <h3>No Exams Yet</h3>
+                      <p>Upload your syllabus to extract all exams, or add them manually.</p>
+                      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        {!course.syllabus_text && <Link href={`/courses/${courseId}/syllabus`} className="btn-primary">Upload Syllabus</Link>}
+                        <Link href={`/exam-prep?courseId=${courseId}`} className="btn-secondary-action">Add Exam</Link>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        </main>
       </div>
     </>
   )

@@ -5,8 +5,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || ""
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || ""
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 interface RequestBody {
   userId: string
@@ -14,6 +14,7 @@ interface RequestBody {
   dueDate: string          // YYYY-MM-DD
   hoursPerDay: number      // How many hours per day user can work
   timezone?: string
+  courseId?: string | null
 }
 
 interface TaskBreakdown {
@@ -191,7 +192,7 @@ serve(async (req) => {
     }
 
     const body: RequestBody = await req.json()
-    const { assignmentContent, dueDate, hoursPerDay, userId } = body
+    const { assignmentContent, dueDate, hoursPerDay, userId, courseId } = body
     const userTimeZone = body.timezone || "UTC"
 
     if (!assignmentContent || !dueDate || !hoursPerDay) {
@@ -317,27 +318,27 @@ CRITICAL:
 
 Analyze the assignment content and return ONLY valid JSON with the task breakdown.`
 
-    const breakdownResponse = await fetch(OPENAI_URL, {
+    const breakdownResponse = await fetch(ANTHROPIC_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-2024-11-20",
+        model: "claude-sonnet-4-6",
+        max_tokens: 8000,
+        system: "You are an expert at breaking down assignments into specific, actionable tasks. Return ONLY valid JSON.",
         messages: [
-          { role: "system", content: "You are an expert at breaking down assignments into specific, actionable tasks. Return ONLY valid JSON." },
-          { role: "user", content: breakdownPrompt }
-        ],
-        max_tokens: 4000,
-        temperature: 0.3,
-        response_format: { type: "json_object" }
+          { role: "user", content: breakdownPrompt },
+          { role: "assistant", content: "{" }
+        ]
       })
     })
 
     if (!breakdownResponse.ok) {
       const error = await breakdownResponse.text()
-      console.error("❌ OpenAI breakdown failed:", error)
+      console.error("❌ Claude breakdown failed:", error)
       return new Response(
         JSON.stringify({ error: "Failed to create task breakdown", details: error }),
         { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
@@ -345,7 +346,7 @@ Analyze the assignment content and return ONLY valid JSON with the task breakdow
     }
 
     const breakdownData = await breakdownResponse.json()
-    const breakdownContent = breakdownData.choices?.[0]?.message?.content
+    const breakdownContent = "{" + (breakdownData.content?.[0]?.text || "}")
 
     let breakdown: TaskBreakdown
 
@@ -369,6 +370,7 @@ Analyze the assignment content and return ONLY valid JSON with the task breakdow
         total_days: breakdown.totalDays,
         daily_minutes_budget: minutesPerDay,
         domain: "academic",
+        course_id: courseId || null,
         created_at: new Date().toISOString()
       })
       .select()

@@ -236,7 +236,7 @@ export default function SyllabusUploadPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (session) {
-          await fetch('/api/courses/extract-syllabus-items', {
+          const extractRes = await fetch('/api/courses/extract-syllabus-items', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -247,6 +247,11 @@ export default function SyllabusUploadPage() {
               syllabusText: combinedText,
             }),
           })
+          if (!extractRes.ok) {
+            const extractErr = await extractRes.json().catch(() => ({}))
+            console.error('Syllabus extraction failed:', extractErr)
+            toast.error(extractErr.error || 'Could not extract course items from syllabus. Please check that ANTHROPIC_API_KEY is configured.')
+          }
         }
       } catch (extractError) {
         console.error('Error extracting syllabus items:', extractError)

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useRef, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Navigation from '@/components/layout/Navigation'
@@ -126,8 +126,11 @@ const detectAssignmentScale = (text: string) => {
   return 'small'
 }
 
-export default function AssignmentHelperPage() {
+function AssignmentHelperContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const assignmentId = searchParams.get('assignmentId')
+  const courseId = searchParams.get('courseId')
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -508,7 +511,8 @@ export default function AssignmentHelperPage() {
           timezone,
           assignmentContent: extractedContent,
           dueDate: planDueDate,
-          hoursPerDay: planHoursPerDay
+          hoursPerDay: planHoursPerDay,
+          courseId: courseId || null,
         }),
       }).catch((e) => {
         console.error('Background plan creation error:', e)
@@ -521,6 +525,14 @@ export default function AssignmentHelperPage() {
         hours_per_day: planHoursPerDay,
         due_date: planDueDate,
       })
+
+      // Mark course_assignment as having a plan so the dashboard button updates
+      if (assignmentId) {
+        supabase.from('course_assignments')
+          .update({ step_by_step_plan: { created: true, created_at: new Date().toISOString() } })
+          .eq('id', assignmentId)
+          .then(undefined, () => {})
+      }
 
       // Small delay to ensure PostHog event is sent before navigation
       await new Promise(resolve => setTimeout(resolve, 200))
@@ -900,5 +912,13 @@ For example:
         </div>
       </div>
     </>
+  )
+}
+
+export default function AssignmentHelperPage() {
+  return (
+    <Suspense>
+      <AssignmentHelperContent />
+    </Suspense>
   )
 }

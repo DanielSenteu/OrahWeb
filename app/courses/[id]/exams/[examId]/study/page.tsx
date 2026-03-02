@@ -98,7 +98,6 @@ export default function ExamStudyDashboardPage() {
         .select('id')
         .eq('user_id', user.id)
         .eq('exam_id', examId)
-        .eq('goal_type', 'exam')
         .maybeSingle()
 
       let goalId = goal?.id

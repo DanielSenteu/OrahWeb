@@ -3,6 +3,7 @@ import { Inter, Syne } from "next/font/google";
 import "./globals.css";
 import StructuredData from "@/components/seo/StructuredData";
 import { PostHogProvider } from "@/lib/posthog";
+import FirstTimeTutorial from "@/components/ui/FirstTimeTutorial";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -146,6 +147,7 @@ export default function RootLayout({
         <PostHogProvider>
           <StructuredData />
           {children}
+          <FirstTimeTutorial />
         </PostHogProvider>
       </body>
     </html>

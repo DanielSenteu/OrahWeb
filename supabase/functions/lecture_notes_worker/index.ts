@@ -5,7 +5,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || ""
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || ""
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "" // kept for Whisper audio only
 const ASSEMBLYAI_API_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") || ""
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
@@ -31,12 +32,13 @@ serve(async (req) => {
     })
   }
 
+  const body = await req.json().catch(() => ({}))
+  const jobId = body.jobId
+
   try {
     const dbSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    
+
     // Get pending jobs (or specific job ID from request)
-    const body = await req.json().catch(() => ({}))
-    const jobId = body.jobId
 
     let jobs: any[] = []
 
@@ -295,9 +297,6 @@ serve(async (req) => {
 
     // Try to update job status to failed
     try {
-      const body = await req.json().catch(() => ({}))
-      const jobId = body.jobId
-      
       if (jobId) {
         const dbSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         await dbSupabase
@@ -367,24 +366,24 @@ ADDITIONAL CAPTURE REQUIREMENTS:
 
 Make these notes so comprehensive that students can ace exams AND complete homework using only these notes.`
 
-  const notesResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+  const notesResponse = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "content-type": "application/json",
+      "x-api-key": ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini-2024-07-18",
+      model: "claude-sonnet-4-6",
+      max_tokens: 16000,
+      system: notesPrompt,
       messages: [
-        { role: "system", content: notesPrompt },
         {
           role: "user",
           content: `Create organized notes from this lecture transcript${chunkIndex > 0 ? ` (chunk ${chunkIndex + 1})` : ""}:\n\n${chunkText}`,
         },
       ],
       temperature: 0.7,
-      max_tokens: 16000,
-      response_format: { type: "json_object" },
     }),
   })
 
@@ -394,7 +393,7 @@ Make these notes so comprehensive that students can ace exams AND complete homew
   }
 
   const notesData = await notesResponse.json()
-  const notesContent = notesData.choices[0]?.message?.content
+  const notesContent = notesData.content?.[0]?.text
 
   if (!notesContent) {
     throw new Error("Failed to generate notes")
