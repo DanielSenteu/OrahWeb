@@ -130,6 +130,7 @@ function AssignmentHelperContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const assignmentId = searchParams.get('assignmentId')
+  const courseId = searchParams.get('courseId')
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -510,7 +511,8 @@ function AssignmentHelperContent() {
           timezone,
           assignmentContent: extractedContent,
           dueDate: planDueDate,
-          hoursPerDay: planHoursPerDay
+          hoursPerDay: planHoursPerDay,
+          courseId: courseId || null,
         }),
       }).catch((e) => {
         console.error('Background plan creation error:', e)

@@ -9,12 +9,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { 
-      userId, 
-      timezone, 
+    const {
+      userId,
+      timezone,
       assignmentContent,
       dueDate,
-      hoursPerDay
+      hoursPerDay,
+      courseId,
     } = await req.json()
     
     if (!assignmentContent || !userId || !dueDate || !hoursPerDay) {
@@ -40,7 +41,8 @@ export async function POST(req: Request) {
         timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
         assignmentContent,
         dueDate,
-        hoursPerDay
+        hoursPerDay,
+        courseId: courseId || null,
       }),
     })
 

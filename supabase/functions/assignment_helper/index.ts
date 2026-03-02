@@ -14,6 +14,7 @@ interface RequestBody {
   dueDate: string          // YYYY-MM-DD
   hoursPerDay: number      // How many hours per day user can work
   timezone?: string
+  courseId?: string | null
 }
 
 interface TaskBreakdown {
@@ -191,7 +192,7 @@ serve(async (req) => {
     }
 
     const body: RequestBody = await req.json()
-    const { assignmentContent, dueDate, hoursPerDay, userId } = body
+    const { assignmentContent, dueDate, hoursPerDay, userId, courseId } = body
     const userTimeZone = body.timezone || "UTC"
 
     if (!assignmentContent || !dueDate || !hoursPerDay) {
@@ -369,6 +370,7 @@ Analyze the assignment content and return ONLY valid JSON with the task breakdow
         total_days: breakdown.totalDays,
         daily_minutes_budget: minutesPerDay,
         domain: "academic",
+        course_id: courseId || null,
         created_at: new Date().toISOString()
       })
       .select()
