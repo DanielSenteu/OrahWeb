@@ -1,0 +1,103 @@
+.profile-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5rem 1.5rem 3rem;
+}
+
+.profile-card {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  padding: 2rem;
+}
+
+.profile-heading {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 0.25rem;
+}
+
+.profile-sub {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.38);
+  margin: 0 0 2rem;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  margin-bottom: 1.75rem;
+}
+
+.profile-row-icon {
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+  display: flex;
+}
+
+.profile-row-text {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.75);
+  word-break: break-all;
+}
+
+.profile-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  margin-bottom: 1.25rem;
+}
+
+.btn-logout {
+  width: 100%;
+  padding: 0.85rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-radius: 10px;
+  color: #f87171;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
+  margin-bottom: 0.6rem;
+}
+
+.btn-logout:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.38);
+}
+
+.btn-logout:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-home {
+  display: block;
+  width: 100%;
+  padding: 0.85rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  transition: background 0.18s, color 0.18s;
+}
+
+.btn-home:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+}
