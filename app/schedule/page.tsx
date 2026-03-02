@@ -374,7 +374,9 @@ export default function SchedulePage() {
                       className={`day-cell ${!day.isCurrentMonth ? 'other-month' : ''} ${isDayToday ? 'today' : ''} ${dayTasks.length > 0 ? 'has-tasks' : ''}`}
                       onClick={() => { if (day.isCurrentMonth) { setSelectedDate(day.date); setCurrentView('day') } }}
                     >
-                      <div className="day-number">{day.date.getDate()}</div>
+                      <div className="day-cell-head">
+                        <div className="day-number">{day.date.getDate()}</div>
+                      </div>
                       {dayTasks.length > 0 && (
                         <div className="task-indicators">
                           {dayTasks.slice(0, 3).map(task => (
