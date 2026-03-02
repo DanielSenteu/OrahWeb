@@ -636,6 +636,78 @@
   border-radius: 5px; font-size: 0.7rem; font-weight: 700;
 }
 
+/* Item actions group */
+.item-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Icon-only delete / re-record buttons */
+.item-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.18s, color 0.18s;
+}
+
+.item-icon-btn svg { width: 14px; height: 14px; }
+
+.item-icon-btn--delete {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.item-icon-btn--delete:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.item-icon-btn--rerecord {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.item-icon-btn--rerecord:hover {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+
+/* Inline confirm */
+.item-inline-confirm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.item-inline-confirm span {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.confirm-yes,
+.confirm-no {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.confirm-yes { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.confirm-yes:hover { background: rgba(239, 68, 68, 0.4); }
+.confirm-no { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.55); }
+.confirm-no:hover { background: rgba(255, 255, 255, 0.12); }
+
 /* Action buttons */
 .item-action-btn {
   display: inline-flex; align-items: center; gap: 0.375rem;

@@ -37,6 +37,8 @@ export default function CourseDashboardPage() {
   const [dataLoading, setDataLoading] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [dailyTasks, setDailyTasks] = useState<any[]>([])
+  const [deletingItem, setDeletingItem] = useState<{ type: 'assignment' | 'exam' | 'lecture', id: string } | null>(null)
+  const [rerecordingId, setRerecordingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (courseId) loadCourse()
@@ -96,6 +98,40 @@ export default function CourseDashboardPage() {
       }
     } catch (e) { console.error('Error loading tab data:', e) }
     finally { setDataLoading(false) }
+  }
+
+  // ── Delete / Re-record ─────────────────────────────────────────────────────
+  const handleDeleteAssignment = async (id: string) => {
+    await supabase.from('course_assignments').delete().eq('id', id)
+    setAssignments(prev => prev.filter(a => a.id !== id))
+    setDeletingItem(null)
+  }
+
+  const handleDeleteExam = async (id: string) => {
+    await supabase.from('course_exams').delete().eq('id', id)
+    setExams(prev => prev.filter(e => e.id !== id))
+    setDeletingItem(null)
+  }
+
+  const handleDeleteLecture = async (id: string) => {
+    await supabase.from('course_lectures').delete().eq('id', id)
+    setLectures(prev => prev.filter(l => l.id !== id))
+    setDeletingItem(null)
+  }
+
+  const handleReRecord = async (lectureId: string) => {
+    await supabase.from('course_lectures').update({
+      audio_url: null,
+      transcript: null,
+      generated_notes: null,
+      processing_status: 'pending',
+    }).eq('id', lectureId)
+    setLectures(prev => prev.map(l => l.id === lectureId
+      ? { ...l, audio_url: null, transcript: null, generated_notes: null, processing_status: 'pending' }
+      : l
+    ))
+    setRerecordingId(null)
+    router.push(`/lecture-notes?courseId=${courseId}&startRecord=1`)
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -320,9 +356,46 @@ export default function CourseDashboardPage() {
                                 ? <span className="status-pill status-inprogress">Processing…</span>
                                 : <span className="status-pill status-pending">Not Recorded</span>
                             }
-                            <Link href={`/lecture-notes?courseId=${courseId}&lectureId=${lecture.id}`} className="item-action-btn" style={{ '--btn-color': courseColor } as React.CSSProperties}>
-                              {lecture.audio_url ? 'View Notes' : 'Record'}
-                            </Link>
+                            {deletingItem?.id === lecture.id ? (
+                              <div className="item-inline-confirm">
+                                <span>Delete?</span>
+                                <button className="confirm-yes" onClick={() => handleDeleteLecture(lecture.id)}>Yes</button>
+                                <button className="confirm-no" onClick={() => setDeletingItem(null)}>No</button>
+                              </div>
+                            ) : rerecordingId === lecture.id ? (
+                              <div className="item-inline-confirm">
+                                <span>Clear &amp; re-record?</span>
+                                <button className="confirm-yes" onClick={() => handleReRecord(lecture.id)}>Yes</button>
+                                <button className="confirm-no" onClick={() => setRerecordingId(null)}>No</button>
+                              </div>
+                            ) : (
+                              <div className="item-actions-group">
+                                {lecture.audio_url && (
+                                  <button
+                                    className="item-icon-btn item-icon-btn--rerecord"
+                                    onClick={() => setRerecordingId(lecture.id)}
+                                    title="Re-record"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                                      <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/>
+                                    </svg>
+                                  </button>
+                                )}
+                                <Link href={`/lecture-notes?courseId=${courseId}&lectureId=${lecture.id}`} className="item-action-btn" style={{ '--btn-color': courseColor } as React.CSSProperties}>
+                                  {lecture.audio_url ? 'View Notes' : 'Record'}
+                                </Link>
+                                <button
+                                  className="item-icon-btn item-icon-btn--delete"
+                                  onClick={() => setDeletingItem({ type: 'lecture', id: lecture.id })}
+                                  title="Delete lecture"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+                                    <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -372,9 +445,29 @@ export default function CourseDashboardPage() {
                             </div>
                             <div className="item-card-right">
                               <span className={`status-pill ${getStatusBadge(a.status)}`}>{(a.status || 'not started').replace('_', ' ')}</span>
-                              <Link href={a.step_by_step_plan ? `/schedule` : `/assignment-helper?courseId=${courseId}&assignmentId=${a.id}`} className={`item-action-btn ${a.step_by_step_plan ? 'item-action-primary' : ''}`} style={{ '--btn-color': courseColor } as React.CSSProperties}>
-                                {a.step_by_step_plan ? 'Go to Plan' : 'Create Plan'}
-                              </Link>
+                              {deletingItem?.id === a.id ? (
+                                <div className="item-inline-confirm">
+                                  <span>Delete?</span>
+                                  <button className="confirm-yes" onClick={() => handleDeleteAssignment(a.id)}>Yes</button>
+                                  <button className="confirm-no" onClick={() => setDeletingItem(null)}>No</button>
+                                </div>
+                              ) : (
+                                <div className="item-actions-group">
+                                  <Link href={a.step_by_step_plan ? `/schedule` : `/assignment-helper?courseId=${courseId}&assignmentId=${a.id}`} className={`item-action-btn ${a.step_by_step_plan ? 'item-action-primary' : ''}`} style={{ '--btn-color': courseColor } as React.CSSProperties}>
+                                    {a.step_by_step_plan ? 'Go to Plan' : 'Create Plan'}
+                                  </Link>
+                                  <button
+                                    className="item-icon-btn item-icon-btn--delete"
+                                    onClick={() => setDeletingItem({ type: 'assignment', id: a.id })}
+                                    title="Delete assignment"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                                      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+                                      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )
@@ -431,10 +524,30 @@ export default function CourseDashboardPage() {
                             </div>
                             <div className="item-card-right">
                               <span className={`status-pill ${getStatusBadge(exam.status)}`}>{(exam.status || 'not started').replace('_', ' ')}</span>
-                              {exam.hasPlan ? (
-                                <Link href={`/courses/${courseId}/exams/${exam.id}/study`} className="item-action-btn item-action-primary" style={{ '--btn-color': courseColor } as React.CSSProperties}>Go to Plan</Link>
+                              {deletingItem?.id === exam.id ? (
+                                <div className="item-inline-confirm">
+                                  <span>Delete?</span>
+                                  <button className="confirm-yes" onClick={() => handleDeleteExam(exam.id)}>Yes</button>
+                                  <button className="confirm-no" onClick={() => setDeletingItem(null)}>No</button>
+                                </div>
                               ) : (
-                                <Link href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`} className="item-action-btn" style={{ '--btn-color': courseColor } as React.CSSProperties}>Create Study Plan</Link>
+                                <div className="item-actions-group">
+                                  {exam.hasPlan ? (
+                                    <Link href={`/courses/${courseId}/exams/${exam.id}/study`} className="item-action-btn item-action-primary" style={{ '--btn-color': courseColor } as React.CSSProperties}>Go to Plan</Link>
+                                  ) : (
+                                    <Link href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`} className="item-action-btn" style={{ '--btn-color': courseColor } as React.CSSProperties}>Create Study Plan</Link>
+                                  )}
+                                  <button
+                                    className="item-icon-btn item-icon-btn--delete"
+                                    onClick={() => setDeletingItem({ type: 'exam', id: exam.id })}
+                                    title="Delete exam"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                                      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+                                      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                                    </svg>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </div>

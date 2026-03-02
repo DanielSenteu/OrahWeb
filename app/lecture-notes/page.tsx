@@ -36,6 +36,7 @@ function LectureNotesContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const courseId = searchParams.get('courseId')
+  const startRecord = searchParams.get('startRecord')
   const supabase = createClient()
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -71,6 +72,11 @@ function LectureNotesContent() {
   // Periodic save intervals
   const CHUNK_SAVE_INTERVAL = 30 * 1000 // Save chunks to IndexedDB every 30 seconds
   const STORAGE_UPLOAD_INTERVAL = 5 * 60 * 1000 // Upload partial to Storage every 5 minutes
+
+  // Auto-start recording if navigated from re-record action
+  useEffect(() => {
+    if (startRecord === '1') setMode('record')
+  }, [startRecord])
 
   // Load saved notes and check for incomplete recordings on mount
   useEffect(() => {

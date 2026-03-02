@@ -40,6 +40,7 @@ export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [statsMap, setStatsMap] = useState<Record<string, CourseStats>>({})
   const [loading, setLoading] = useState(true)
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null)
 
   useEffect(() => {
     loadCourses()
@@ -91,6 +92,15 @@ export default function CoursesPage() {
       console.error('Error loading courses:', error)
       setLoading(false)
     }
+  }
+
+  const handleDeleteCourse = async (id: string) => {
+    const { error } = await supabase.from('courses').delete().eq('id', id)
+    if (!error) {
+      setCourses(prev => prev.filter(c => c.id !== id))
+      setStatsMap(prev => { const next = { ...prev }; delete next[id]; return next })
+    }
+    setDeletingCourseId(null)
   }
 
   const getSemesterDisplay = (course: Course) => {
@@ -175,9 +185,37 @@ export default function CoursesPage() {
                   href={`/courses/${course.id}`}
                   className="course-card"
                   style={{ '--course-color': color } as React.CSSProperties}
+                  onClick={(e) => { if (deletingCourseId === course.id) e.preventDefault() }}
                 >
                   {/* Top accent bar */}
                   <div className="course-card-accent" />
+
+                  {/* Delete button */}
+                  <div
+                    className="course-card-delete-wrap"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+                  >
+                    {deletingCourseId === course.id ? (
+                      <div className="course-card-confirm">
+                        <span>Delete?</span>
+                        <button className="course-confirm-yes" onClick={() => handleDeleteCourse(course.id)}>Yes</button>
+                        <button className="course-confirm-no" onClick={() => setDeletingCourseId(null)}>No</button>
+                      </div>
+                    ) : (
+                      <button
+                        className="course-card-delete-btn"
+                        onClick={() => setDeletingCourseId(course.id)}
+                        title="Delete course"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14H6L5 6" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M9 6V4h6v2" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
 
                   {/* Icon + Title */}
                   <div className="course-card-top">
