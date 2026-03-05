@@ -91,7 +91,7 @@ export default function CourseDashboardPage() {
               const { data: taskData } = await supabase.from('task_items').select('id').eq('goal_id', finalGoal.id).order('day_number', { ascending: true }).limit(1).maybeSingle()
               firstTaskId = taskData?.id || null
             }
-            return { ...exam, hasPlan: !!finalGoal, firstTaskId }
+            return { ...exam, hasPlan: !!finalGoal, goalId: finalGoal?.id || null, firstTaskId }
           })
         )
         setExams(examsWithPlan)
@@ -453,8 +453,8 @@ export default function CourseDashboardPage() {
                                 </div>
                               ) : (
                                 <div className="item-actions-group">
-                                  <Link href={a.step_by_step_plan ? `/schedule` : `/assignment-helper?courseId=${courseId}&assignmentId=${a.id}`} className={`item-action-btn ${a.step_by_step_plan ? 'item-action-primary' : ''}`} style={{ '--btn-color': courseColor } as React.CSSProperties}>
-                                    {a.step_by_step_plan ? 'Go to Plan' : 'Create Plan'}
+                                  <Link href={a.step_by_step_plan?.goal_id ? `/goals/${a.step_by_step_plan.goal_id}` : `/assignment-helper?courseId=${courseId}&assignmentId=${a.id}`} className={`item-action-btn ${a.step_by_step_plan?.goal_id ? 'item-action-primary' : ''}`} style={{ '--btn-color': courseColor } as React.CSSProperties}>
+                                    {a.step_by_step_plan?.goal_id ? 'Go to Plan' : 'Create Plan'}
                                   </Link>
                                   <button
                                     className="item-icon-btn item-icon-btn--delete"
@@ -532,8 +532,8 @@ export default function CourseDashboardPage() {
                                 </div>
                               ) : (
                                 <div className="item-actions-group">
-                                  {exam.hasPlan ? (
-                                    <Link href={`/courses/${courseId}/exams/${exam.id}/study`} className="item-action-btn item-action-primary" style={{ '--btn-color': courseColor } as React.CSSProperties}>Go to Plan</Link>
+                                  {exam.hasPlan && exam.goalId ? (
+                                    <Link href={`/goals/${exam.goalId}`} className="item-action-btn item-action-primary" style={{ '--btn-color': courseColor } as React.CSSProperties}>Go to Plan</Link>
                                   ) : (
                                     <Link href={`/exam-prep?courseId=${courseId}&examId=${exam.id}`} className="item-action-btn" style={{ '--btn-color': courseColor } as React.CSSProperties}>Create Study Plan</Link>
                                   )}

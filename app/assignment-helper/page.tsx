@@ -513,6 +513,7 @@ function AssignmentHelperContent() {
           dueDate: planDueDate,
           hoursPerDay: planHoursPerDay,
           courseId: courseId || null,
+          assignmentId: assignmentId || null,
         }),
       }).catch((e) => {
         console.error('Background plan creation error:', e)
@@ -525,14 +526,6 @@ function AssignmentHelperContent() {
         hours_per_day: planHoursPerDay,
         due_date: planDueDate,
       })
-
-      // Mark course_assignment as having a plan so the dashboard button updates
-      if (assignmentId) {
-        supabase.from('course_assignments')
-          .update({ step_by_step_plan: { created: true, created_at: new Date().toISOString() } })
-          .eq('id', assignmentId)
-          .then(undefined, () => {})
-      }
 
       // Small delay to ensure PostHog event is sent before navigation
       await new Promise(resolve => setTimeout(resolve, 200))

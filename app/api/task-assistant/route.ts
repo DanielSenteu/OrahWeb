@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || '',
+})
 
 export async function POST(req: Request) {
-  // Initialize OpenAI inside handler to avoid build-time evaluation
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || '',
-  })
   try {
     const { messages, context, taskContext } = await req.json()
 
@@ -39,7 +39,7 @@ TIMER STATUS:
 - Total Time Worked: ${formatTime(context.totalTimeWorked)}
 
 CHECKPOINTS:
-${context.checkpoints.map((cp: any, i: number) => 
+${context.checkpoints.map((cp: any, i: number) =>
   `${i + 1}. ${cp.isCompleted ? '✅' : '⬜'} ${cp.content}`
 ).join('\n')}
 
@@ -78,17 +78,22 @@ Your role:
 - Be supportive and motivating`
     }
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini-2024-07-18',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ],
-      temperature: 0.7,
+    // Convert messages to Anthropic format
+    const anthropicMessages = messages.map((m: { role: string; content: string }) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 600,
+      system: systemPrompt,
+      messages: anthropicMessages,
     })
 
-    const reply = completion.choices[0]?.message?.content || 'I had trouble generating a response.'
+    const reply = response.content[0]?.type === 'text'
+      ? response.content[0].text
+      : 'I had trouble generating a response.'
 
     return NextResponse.json({ reply })
   } catch (error: any) {
@@ -99,4 +104,3 @@ Your role:
     )
   }
 }
-

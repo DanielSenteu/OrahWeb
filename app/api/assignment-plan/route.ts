@@ -16,6 +16,7 @@ export async function POST(req: Request) {
       dueDate,
       hoursPerDay,
       courseId,
+      assignmentId,
     } = await req.json()
     
     if (!assignmentContent || !userId || !dueDate || !hoursPerDay) {
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
 
     console.log('✅ Assignment plan created:', data.goalId)
 
-    // Set as active goal
+    // Set as active goal and store goal_id on the assignment
     if (data.success && data.goalId) {
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -76,6 +77,14 @@ export async function POST(req: Request) {
           },
           { onConflict: 'user_id' }
         )
+
+      // Link goal_id back to the assignment so the dashboard can navigate to it
+      if (assignmentId) {
+        await supabase
+          .from('course_assignments')
+          .update({ step_by_step_plan: { created: true, goal_id: data.goalId } })
+          .eq('id', assignmentId)
+      }
     }
 
     return NextResponse.json(data)
