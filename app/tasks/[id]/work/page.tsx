@@ -194,7 +194,12 @@ export default function TaskWorkSessionPage() {
         console.log('🔍 Checking if task is exam:', { goalId: task.goal_id, goalData, goalError, hasExamColumns })
 
         // Check if it's an exam task (by goal_type OR by summary containing "Exam:")
-        const isExamGoal = goalData?.goal_type === 'exam' || (goalData?.summary && goalData.summary.toLowerCase().startsWith('exam:'))
+        const summaryLower = (goalData?.summary || '').toLowerCase().trim()
+        const looksLikeAssignmentGoal = summaryLower.startsWith('assignment:') || summaryLower.includes('assignment helper')
+        const isExamGoal = !looksLikeAssignmentGoal && (
+          goalData?.goal_type === 'exam' ||
+          summaryLower.startsWith('exam:')
+        )
         
         if (isExamGoal) {
           console.log('✅ Exam task detected:', { examId: goalData?.exam_id, goalType: goalData?.goal_type, summary: goalData?.summary })

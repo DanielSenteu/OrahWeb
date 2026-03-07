@@ -13,6 +13,60 @@ type Message = {
   content: string
 }
 
+const formatYmdLocal = (date: Date) => {
+  const yyyy = date.getFullYear()
+  const mm = `${date.getMonth() + 1}`.padStart(2, '0')
+  const dd = `${date.getDate()}`.padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+const parseDueDateFromText = (text: string): string | null => {
+  if (!text) return null
+  const lower = text.toLowerCase().trim()
+  const now = new Date()
+
+  if (lower.includes('today')) return formatYmdLocal(now)
+  if (lower.includes('tomorrow')) {
+    const d = new Date(now)
+    d.setDate(d.getDate() + 1)
+    return formatYmdLocal(d)
+  }
+
+  const inDaysMatch = lower.match(/in\s+(\d{1,3})\s+days?/)
+  if (inDaysMatch) {
+    const d = new Date(now)
+    d.setDate(d.getDate() + parseInt(inDaysMatch[1], 10))
+    return formatYmdLocal(d)
+  }
+
+  if (lower.includes('next week')) {
+    const d = new Date(now)
+    d.setDate(d.getDate() + 7)
+    return formatYmdLocal(d)
+  }
+
+  const numeric = text.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/) 
+  if (numeric) {
+    const month = parseInt(numeric[1], 10)
+    const day = parseInt(numeric[2], 10)
+    const yearRaw = numeric[3] ? parseInt(numeric[3], 10) : now.getFullYear()
+    const fullYear = yearRaw < 100 ? 2000 + yearRaw : yearRaw
+    return `${fullYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
+  return null
+}
+
+const parseHoursFromText = (text: string): number | null => {
+  if (!text) return null
+  const hoursMatch =
+    text.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)(?:\s*\/\s*day)?/i) ||
+    text.match(/^(\d+(?:\.\d+)?)$/)
+  if (!hoursMatch) return null
+  const parsed = parseFloat(hoursMatch[1])
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
 const extractDateLines = (text: string) => {
   if (!text) return []
   const lines = text
@@ -147,7 +201,6 @@ function AssignmentHelperContent() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [extractedContent, setExtractedContent] = useState('')
-  const [questionCount, setQuestionCount] = useState(0)
   const [creatingPlan, setCreatingPlan] = useState(false)
   const [assignmentScale, setAssignmentScale] = useState<'small' | 'medium' | 'large'>('small')
 
@@ -157,16 +210,37 @@ function AssignmentHelperContent() {
   const dueDateRef = useRef<string | null>(null)
   const hoursPerDayRef = useRef<number | null>(null)
 
-  const buildInitialMessages = (): Message[] => [
-    {
-      role: 'assistant',
-      content: "Perfect! I've read your assignment and understand what needs to be done.",
-    },
-    {
-      role: 'assistant',
-      content: "Just two quick questions:\n\nWhen would you like to complete this assignment?",
-    },
-  ]
+  const buildInitialMessages = (assignmentContent: string): Message[] => {
+    const preview = assignmentContent.replace(/\s+/g, ' ').trim().slice(0, 220)
+    const scaleHint = assignmentScale === 'large'
+      ? 'This looks like a larger assignment, so planning it early is smart.'
+      : assignmentScale === 'medium'
+        ? 'This looks like a medium-sized assignment, so we can build a clean day-by-day plan.'
+        : 'This looks manageable, and we can still make the plan very specific.'
+
+    return [
+      {
+        role: 'assistant',
+        content: `I reviewed your assignment transcript. ${scaleHint}`,
+      },
+      {
+        role: 'assistant',
+        content: preview
+          ? `What I picked up from your assignment:\n\n"${preview}${assignmentContent.length > 220 ? '...' : ''}"\n\nWhen do you want this completed?`
+          : 'When do you want this completed?',
+      },
+    ]
+  }
+
+  const startPlanningChat = (content: string) => {
+    const initialMessages = buildInitialMessages(content)
+    setMessages(initialMessages)
+    setDueDate(null)
+    setHoursPerDay(null)
+    dueDateRef.current = null
+    hoursPerDayRef.current = null
+    setShowChat(true)
+  }
 
   const saveDocument = async (
     content: string,
@@ -274,11 +348,7 @@ function AssignmentHelperContent() {
           droppedFile.name
         )
 
-        const initialMessages = buildInitialMessages()
-
-        setMessages(initialMessages)
-        setQuestionCount(1)
-        setShowChat(true)
+        startPlanningChat(content)
       } catch (error) {
         console.error('Error processing file:', error)
         alert('Failed to process file. Please try again.')
@@ -341,11 +411,7 @@ function AssignmentHelperContent() {
           selectedFile.name
         )
 
-        const initialMessages = buildInitialMessages()
-
-        setMessages(initialMessages)
-        setQuestionCount(1)
-        setShowChat(true)
+        startPlanningChat(content)
       } catch (error) {
         console.error('Error processing file:', error)
         alert('Failed to process file. Please try again.')
@@ -380,11 +446,7 @@ function AssignmentHelperContent() {
       setAssignmentScale(detectAssignmentScale(content))
       await saveDocument(content, 'text')
 
-      const initialMessages = buildInitialMessages()
-
-      setMessages(initialMessages)
-      setQuestionCount(1)
-      setShowChat(true)
+      startPlanningChat(content)
     } catch (error) {
       console.error('Error processing text:', error)
       alert('Failed to process content. Please try again.')
@@ -394,44 +456,34 @@ function AssignmentHelperContent() {
   }
 
   // Chat handlers
-  const handleQuickReply = (reply: string, value?: any) => {
-    if (loading) return
-    
-    // Set both state and ref immediately
-    if (questionCount === 1 && typeof value === 'string') {
+  const handleQuickReply = (reply: string, value?: unknown) => {
+    if (loading || creatingPlan) return
+
+    if (typeof value === 'string') {
       setDueDate(value)
       dueDateRef.current = value
-    } else if (questionCount === 2 && typeof value === 'number') {
+    } else if (typeof value === 'number') {
       setHoursPerDay(value)
       hoursPerDayRef.current = value
     }
-    
+
     sendMessage(reply)
   }
 
   const sendMessage = async (messageText?: string) => {
     const textToSend = messageText || input.trim()
-    if (!textToSend || loading) return
+    if (!textToSend || loading || creatingPlan) return
 
-    // Parse date from user input (question 1)
-    if (questionCount === 1) {
-      // Try to parse a date from the response
-      const dateMatch = textToSend.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/)
-      if (dateMatch) {
-        const month = parseInt(dateMatch[1])
-        const day = parseInt(dateMatch[2])
-        const year = dateMatch[3] ? parseInt(dateMatch[3]) : new Date().getFullYear()
-        const fullYear = year < 100 ? 2000 + year : year
-        setDueDate(`${fullYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
-      }
+    const parsedDueDate = parseDueDateFromText(textToSend)
+    const parsedHours = parseHoursFromText(textToSend)
+
+    if (parsedDueDate) {
+      setDueDate(parsedDueDate)
+      dueDateRef.current = parsedDueDate
     }
-
-    // Parse hours from user input (question 2)
-    if (questionCount === 2) {
-      const hoursMatch = textToSend.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/i) || textToSend.match(/^(\d+(?:\.\d+)?)$/)
-      if (hoursMatch) {
-        setHoursPerDay(parseFloat(hoursMatch[1]))
-      }
+    if (parsedHours !== null) {
+      setHoursPerDay(parsedHours)
+      hoursPerDayRef.current = parsedHours
     }
 
     const newMessages: Message[] = [...messages, { role: 'user', content: textToSend }]
@@ -439,39 +491,67 @@ function AssignmentHelperContent() {
     setInput('')
     setLoading(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    try {
+      const response = await fetch('/api/assignment-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newMessages,
+          assignmentContent: extractedContent,
+          dueDate: parsedDueDate || dueDateRef.current || dueDate,
+          hoursPerDay: parsedHours ?? hoursPerDayRef.current ?? hoursPerDay,
+        }),
+      })
 
-    const newQuestionCount = questionCount + 1
-    let assistantMessage = ''
-
-    if (questionCount === 1) {
-      assistantMessage = 'Great! How many hours per day can you dedicate to working on this assignment?'
-    } else if (questionCount === 2) {
-      // Get the latest values from refs
-      const finalDueDate = dueDateRef.current
-      const finalHoursPerDay = hoursPerDayRef.current
-
-      if (!finalDueDate || !finalHoursPerDay) {
-        console.error('Missing data after Q2:', { finalDueDate, finalHoursPerDay })
-        alert('Please answer all questions using the buttons.')
-        setLoading(false)
-        return
+      if (!response.ok) {
+        throw new Error('Assistant response failed')
       }
 
-      assistantMessage = "Perfect! I'm now creating your assignment breakdown with specific, actionable tasks. This will just take a moment..."
-      setQuestionCount(newQuestionCount)
-      setMessages([...newMessages, { role: 'assistant', content: assistantMessage }])
+      const data = await response.json()
+
+      if (data.extractedDueDate) {
+        setDueDate(data.extractedDueDate)
+        dueDateRef.current = data.extractedDueDate
+      }
+      if (typeof data.extractedHoursPerDay === 'number') {
+        setHoursPerDay(data.extractedHoursPerDay)
+        hoursPerDayRef.current = data.extractedHoursPerDay
+      }
+
+      const assistantMessage = data.reply || 'Got it. Tell me a bit more about your timeline for this assignment.'
+      const updatedMessages = [...newMessages, { role: 'assistant', content: assistantMessage }]
+      setMessages(updatedMessages)
       setLoading(false)
 
-      setTimeout(() => {
-        handleCreatePlan(newMessages, finalDueDate, finalHoursPerDay)
-      }, 1500)
-      return
-    }
+      if (data.readyForPlan) {
+        const finalDueDate = data.extractedDueDate || dueDateRef.current || dueDate
+        const finalHoursPerDay = data.extractedHoursPerDay ?? hoursPerDayRef.current ?? hoursPerDay
 
-    setQuestionCount(newQuestionCount)
-    setMessages([...newMessages, { role: 'assistant', content: assistantMessage }])
-    setLoading(false)
+        if (finalDueDate && finalHoursPerDay) {
+          setTimeout(() => {
+            handleCreatePlan(updatedMessages, finalDueDate, finalHoursPerDay)
+          }, 1200)
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Assignment assistant error:', error)
+      const fallback = !dueDateRef.current
+        ? 'Got it. What date do you want this assignment completed by?'
+        : !hoursPerDayRef.current
+          ? 'Great. How many hours per day can you realistically dedicate to this assignment?'
+          : "Perfect. I'm creating your assignment plan now."
+
+      const updatedMessages = [...newMessages, { role: 'assistant', content: fallback }]
+      setMessages(updatedMessages)
+      setLoading(false)
+
+      if (dueDateRef.current && hoursPerDayRef.current) {
+        setTimeout(() => {
+          handleCreatePlan(updatedMessages, dueDateRef.current!, hoursPerDayRef.current!)
+        }, 1200)
+      }
+    }
   }
 
   const handleCreatePlan = async (conversationMessages: Message[], planDueDate: string, planHoursPerDay: number) => {
@@ -560,6 +640,9 @@ function AssignmentHelperContent() {
 
   // Render chat interface
   if (showChat) {
+    const answeredQuestions = (dueDate ? 1 : 0) + (hoursPerDay ? 1 : 0)
+    const currentQuestion = answeredQuestions >= totalQuestions ? totalQuestions : answeredQuestions + 1
+
     return (
       <>
         <div className="noise-bg"></div>
@@ -580,9 +663,9 @@ function AssignmentHelperContent() {
             </div>
           </div>
 
-          {questionCount <= totalQuestions && (
+          {!creatingPlan && (
             <div className="progress-indicator">
-              Question {questionCount} of {totalQuestions}
+              Question {currentQuestion} of {totalQuestions}
             </div>
           )}
 
@@ -603,7 +686,7 @@ function AssignmentHelperContent() {
                   <div className="message-bubble">{msg.content}</div>
                   {msg.role === 'assistant' && idx === messages.length - 1 && !loading && (
                     <>
-                      {questionCount === 1 && (
+                      {!dueDate && (
                         <div className="quick-replies">
                           <button
                             className="quick-reply-btn"
@@ -646,7 +729,7 @@ function AssignmentHelperContent() {
                           </button>
                         </div>
                       )}
-                      {questionCount === 2 && (
+                      {dueDate && !hoursPerDay && (
                         <div className="quick-replies">
                           <button
                             className="quick-reply-btn"
@@ -677,62 +760,6 @@ function AssignmentHelperContent() {
                             }}
                           >
                             3 hours/day
-                          </button>
-                        </div>
-                      )}
-                      {questionCount === 3 && (
-                        <div className="quick-replies">
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('2-4 hours total')}
-                          >
-                            2-4 hours
-                          </button>
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('5-8 hours total')}
-                          >
-                            5-8 hours
-                          </button>
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('9-15 hours total')}
-                          >
-                            9-15 hours
-                          </button>
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('15+ hours total')}
-                          >
-                            15+ hours
-                          </button>
-                        </div>
-                      )}
-                      {questionCount === 4 && (
-                        <div className="quick-replies">
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('In 3 days')}
-                          >
-                            In 3 days
-                          </button>
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('In 1 week')}
-                          >
-                            In 1 week
-                          </button>
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('In 2 weeks')}
-                          >
-                            In 2 weeks
-                          </button>
-                          <button
-                            className="quick-reply-btn"
-                            onClick={() => handleQuickReply('In 1 month')}
-                          >
-                            In 1 month
                           </button>
                         </div>
                       )}
