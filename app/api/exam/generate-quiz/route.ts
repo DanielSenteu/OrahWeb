@@ -3,6 +3,22 @@ import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 
 const QUIZ_TABLES = ['exam_quiz_questions', 'exam_quiz_uestions'] as const
+const QUIZ_MODEL_TIMEOUT_MS = 75000
+const MAX_NOTES_CHARS_FOR_QUIZ = 26000
+
+function normalizeTopic(rawTopic: string): string {
+  return decodeURIComponent(rawTopic || '').trim().replace(/\s+/g, ' ')
+}
+
+function compressNotesForQuiz(notes: string): string {
+  if (!notes) return ''
+  if (notes.length <= MAX_NOTES_CHARS_FOR_QUIZ) return notes
+
+  // Keep head + tail because summaries and key takeaways are often at ends.
+  const headSize = Math.floor(MAX_NOTES_CHARS_FOR_QUIZ * 0.7)
+  const tailSize = MAX_NOTES_CHARS_FOR_QUIZ - headSize
+  return `${notes.slice(0, headSize)}\n\n[... content truncated for speed ...]\n\n${notes.slice(-tailSize)}`
+}
 
 async function getQuizTableName(supabase: any): Promise<string> {
   for (const table of QUIZ_TABLES) {
@@ -21,6 +37,7 @@ async function fetchCachedQuestions(supabase: any, examId: string, topic: string
     .eq('exam_id', examId)
     .eq('topic', topic)
     .eq('user_id', userId)
+    .limit(10)
   return { data: error ? null : data, error }
 }
 
@@ -48,7 +65,7 @@ export async function GET(req: Request) {
       .single()
     if (!exam) return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
 
-    const decodedTopic = decodeURIComponent(topic)
+    const decodedTopic = normalizeTopic(topic)
     const { data: existing, error: fetchErr } = await fetchCachedQuestions(supabase, examId, decodedTopic, exam.user_id)
     if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
 
@@ -106,14 +123,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
     }
 
+    const normalizedTopic = normalizeTopic(topic)
     const quizTable = await getQuizTableName(supabase)
 
     const { data: existingQuestions } = await supabase
       .from(quizTable)
       .select('*')
       .eq('exam_id', examId)
-      .eq('topic', topic)
+      .eq('topic', normalizedTopic)
       .eq('user_id', exam.user_id)
+      .limit(10)
 
     if (existingQuestions && existingQuestions.length >= 10) {
       return NextResponse.json({
@@ -128,9 +147,11 @@ export async function POST(req: Request) {
       })
     }
 
-    const prompt = `Generate 10 high-quality multiple-choice quiz questions about the topic "${topic}" based on these study notes:
+    const notesForPrompt = compressNotesForQuiz(String(notes))
 
-${notes}
+    const prompt = `Generate 10 high-quality multiple-choice quiz questions about the topic "${normalizedTopic}" based on these study notes:
+
+  ${notesForPrompt}
 
 REQUIREMENTS:
 1. Test DEEP UNDERSTANDING, not just memorization
@@ -156,14 +177,37 @@ Return a JSON array with this EXACT structure:
   }
 ]`
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      system: 'You are an expert at creating educational quiz questions. Return ONLY a valid JSON array, no markdown or explanation.',
-      messages: [
-        { role: 'user', content: prompt },
-      ],
-    })
+    let response: Awaited<ReturnType<typeof anthropic.messages.create>> | null = null
+    let modelError: unknown = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), QUIZ_MODEL_TIMEOUT_MS)
+      try {
+        response = await anthropic.messages.create(
+          {
+            model: 'claude-sonnet-4-6',
+            max_tokens: 5000,
+            system: 'You are an expert at creating educational quiz questions. Return ONLY a valid JSON array, no markdown or explanation.',
+            messages: [{ role: 'user', content: prompt }],
+          },
+          { signal: controller.signal }
+        )
+        clearTimeout(timeout)
+        break
+      } catch (error) {
+        clearTimeout(timeout)
+        modelError = error
+        if (attempt < 1) {
+          await new Promise((r) => setTimeout(r, 500))
+          continue
+        }
+      }
+    }
+
+    if (!response) {
+      const errMsg = modelError instanceof Error ? modelError.message : 'Quiz generation timed out'
+      return NextResponse.json({ error: errMsg }, { status: 504 })
+    }
 
     const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
     const cleanedQuiz = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
@@ -185,7 +229,7 @@ Return a JSON array with this EXACT structure:
     const questionsToInsert = questionsToSave.map((q: any, index: number) => ({
       exam_id: examId,
       user_id: exam.user_id,
-      topic,
+      topic: normalizedTopic,
       question_text: q.question_text,
       options: q.options,
       correct_answer_id: q.correct_answer_id,

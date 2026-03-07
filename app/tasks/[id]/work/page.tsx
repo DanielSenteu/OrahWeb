@@ -51,7 +51,7 @@ export default function TaskWorkSessionPage() {
   const [loading, setLoading] = useState(true)
   const [task, setTask] = useState<Task | null>(null)
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
-  const [showChat, setShowChat] = useState(false)
+  const [showChat, setShowChat] = useState(true)
   const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState('')
   const [isSendingMessage, setIsSendingMessage] = useState(false)
@@ -67,6 +67,7 @@ export default function TaskWorkSessionPage() {
   const [structuredNotes, setStructuredNotes] = useState<any>(null)
   const [loadingExamData, setLoadingExamData] = useState(false)
   const [generatingNotes, setGeneratingNotes] = useState(false)
+  const [notesLoadingMessage, setNotesLoadingMessage] = useState('Generating structured notes...')
   const [needsDocuments, setNeedsDocuments] = useState(false)
   const [addingDocuments, setAddingDocuments] = useState(false)
 
@@ -329,36 +330,71 @@ export default function TaskWorkSessionPage() {
                 const { data: { session } } = await supabase.auth.getSession()
                 if (!session) return null
                 const auth = `Bearer ${session.access_token}`
+                const readCache = async () => {
+                  const res = await fetch(
+                    `/api/exam/topic-notes?examId=${eid}&topic=${encodeURIComponent(topic)}`,
+                    { headers: { Authorization: auth } }
+                  )
+                  if (!res.ok) return null
+                  return res.json()
+                }
+
                 // 1. Try cache first (instant if saved)
-                const getRes = await fetch(
-                  `/api/exam/topic-notes?examId=${eid}&topic=${encodeURIComponent(topic)}`,
-                  { headers: { Authorization: auth } }
-                )
-                const getData = await getRes.json()
-                if (getRes.ok && (getData.structuredNotes || getData.preparedNotes)) {
+                const cached = await readCache()
+                if (cached && (cached.structuredNotes || cached.preparedNotes)) {
                   return {
-                    structuredNotes: getData.structuredNotes,
-                    preparedNotes: getData.preparedNotes,
-                    fromCache: getData.fromCache,
+                    structuredNotes: cached.structuredNotes,
+                    preparedNotes: cached.preparedNotes,
+                    fromCache: cached.fromCache,
                   }
                 }
-                // 2. Not cached - generate and save via topic-notes POST
-                const postRes = await fetch('/api/exam/topic-notes', {
+
+                // 2. Queue async generation job marker.
+                await fetch('/api/exam/topic-notes', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: auth },
+                  body: JSON.stringify({ examId: eid, topic, async: true }),
+                })
+
+                // 3. Trigger processing in background.
+                fetch('/api/exam/topic-notes/process', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: auth },
                   body: JSON.stringify({ examId: eid, topic }),
+                }).catch(() => {
+                  // best-effort trigger only
                 })
-                if (!postRes.ok) return null
-                const postData = await postRes.json()
-                if (!postData.structuredNotes && !postData.preparedNotes) return null
-                return {
-                  structuredNotes: postData.structuredNotes,
-                  preparedNotes: postData.preparedNotes,
-                  fromCache: false,
+
+                // 4. Poll cache for completion.
+                for (let attempt = 0; attempt < 45; attempt++) {
+                  const current = await readCache()
+                  if (current?.status === 'pending') {
+                    setNotesLoadingMessage('Preparing notes queue...')
+                  } else if (current?.status === 'processing') {
+                    setNotesLoadingMessage('Processing topic notes...')
+                  } else {
+                    const pct = Math.min(95, Math.round(((attempt + 1) / 45) * 100))
+                    setNotesLoadingMessage(`Preparing notes... ${pct}%`)
+                  }
+
+                  if (current?.structuredNotes || current?.preparedNotes) {
+                    return {
+                      structuredNotes: current.structuredNotes,
+                      preparedNotes: current.preparedNotes,
+                      fromCache: current.fromCache,
+                    }
+                  }
+                  if (current?.status === 'failed') {
+                    return null
+                  }
+                  await new Promise((r) => setTimeout(r, 2000))
                 }
+
+                return null
               }
 
               setGeneratingNotes(true)
+              setNotesLoadingMessage('Preparing notes for this topic...')
               try {
                 let eid = examIdToUse
                 if (!eid) {
@@ -825,6 +861,7 @@ export default function TaskWorkSessionPage() {
 
   const completedCount = checkpoints.filter(cp => cp.is_completed).length
   const totalCheckpoints = checkpoints.length
+  const showLegacyExamWorkspace = false
 
   return (
     <>
@@ -857,7 +894,7 @@ export default function TaskWorkSessionPage() {
         </div>
 
         {/* Main Content */}
-        {isExamTask ? (
+        {isExamTask && showLegacyExamWorkspace ? (
           <div style={{ 
             width: '100%', 
             maxWidth: '1400px', 
@@ -923,7 +960,7 @@ export default function TaskWorkSessionPage() {
                 ) : generatingNotes ? (
                   <div className="exam-notes-loading">
                     <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
-                    <p>Generating structured notes...</p>
+                    <p>{notesLoadingMessage}</p>
                   </div>
                 ) : (
                   <>
@@ -1356,7 +1393,7 @@ export default function TaskWorkSessionPage() {
             )}
           </div>
 
-          {/* Right Column - Chat (ONLY for non-exam tasks) */}
+          {/* Right Column - Chat */}
           <div className="work-right">
             {!showChat ? (
               <div className="orah-cta-card">

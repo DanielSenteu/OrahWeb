@@ -30,6 +30,7 @@ export default function QuizPage() {
   const [loading, setLoading] = useState(true)
   const [showResults, setShowResults] = useState(false)
   const [score, setScore] = useState(0)
+  const [loadingMessage, setLoadingMessage] = useState('Generating quiz questions...')
 
   useEffect(() => {
     loadQuiz()
@@ -37,6 +38,7 @@ export default function QuizPage() {
 
   const loadQuiz = async () => {
     try {
+      setLoadingMessage('Checking for existing quiz...')
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
         router.push('/login')
@@ -68,26 +70,66 @@ export default function QuizPage() {
         }
       }
 
-      // 2. No cache - get notes from topic-notes (cached or generated), then generate quiz
+      // 2. No cache - get notes from topic-notes (cached or async-generated), then generate quiz
       let notes = ''
+      const pollForPreparedNotes = async (maxAttempts = 45, intervalMs = 2000) => {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          const res = await fetch(
+            `/api/exam/topic-notes?examId=${examId}&topic=${encodeURIComponent(decodedTopic)}`,
+            { headers: { Authorization: auth } }
+          )
+          const data = res.ok ? await res.json() : {}
+
+          if (data?.status === 'pending') {
+            setLoadingMessage('Preparing your notes queue...')
+          } else if (data?.status === 'processing') {
+            setLoadingMessage('Processing topic notes for quiz generation...')
+          } else {
+            const pct = Math.min(95, Math.round(((attempt + 1) / maxAttempts) * 100))
+            setLoadingMessage(`Preparing study notes... ${pct}%`)
+          }
+
+          if (data?.preparedNotes) {
+            return data.preparedNotes as string
+          }
+
+          if (data?.status === 'failed') {
+            throw new Error(data?.error || 'Failed to generate notes for this topic')
+          }
+
+          await new Promise((r) => setTimeout(r, intervalMs))
+        }
+        throw new Error('Timed out while preparing topic notes. Please try again.')
+      }
+
       const notesRes = await fetch(
         `/api/exam/topic-notes?examId=${examId}&topic=${encodeURIComponent(decodedTopic)}`,
         { headers: { Authorization: auth } }
       )
       const notesData = notesRes.ok ? await notesRes.json() : {}
-      if (notesData.preparedNotes) {
+      if (notesData?.preparedNotes) {
         notes = notesData.preparedNotes
       }
+
       if (!notes) {
-        const postNotesRes = await fetch('/api/exam/topic-notes', {
+        setLoadingMessage('Preparing notes for this topic...')
+        // Queue async job marker.
+        await fetch('/api/exam/topic-notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: auth },
+          body: JSON.stringify({ examId, topic: decodedTopic, async: true }),
+        })
+
+        // Fire processing endpoint and poll status from cache route.
+        fetch('/api/exam/topic-notes/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: auth },
           body: JSON.stringify({ examId, topic: decodedTopic }),
+        }).catch(() => {
+          // Polling path handles eventual state; this call is best effort.
         })
-        if (postNotesRes.ok) {
-          const postNotesData = await postNotesRes.json()
-          notes = postNotesData.preparedNotes || ''
-        }
+
+        notes = await pollForPreparedNotes()
       }
       // Fallback: get notes directly from documents if topic-notes fails
       if (!notes) {
@@ -111,6 +153,7 @@ export default function QuizPage() {
       }
 
       // Generate quiz (saves to DB for next time)
+      setLoadingMessage('Generating quiz questions...')
       const res = await fetch('/api/exam/generate-quiz', {
         method: 'POST',
         headers: {
@@ -237,7 +280,7 @@ export default function QuizPage() {
         <Navigation />
         <div className="quiz-loading">
           <div className="spinner" style={{ width: '40px', height: '40px' }}></div>
-          <p>Generating quiz questions...</p>
+          <p>{loadingMessage}</p>
         </div>
       </>
     )

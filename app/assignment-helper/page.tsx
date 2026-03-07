@@ -210,24 +210,15 @@ function AssignmentHelperContent() {
   const dueDateRef = useRef<string | null>(null)
   const hoursPerDayRef = useRef<number | null>(null)
 
-  const buildInitialMessages = (assignmentContent: string): Message[] => {
-    const preview = assignmentContent.replace(/\s+/g, ' ').trim().slice(0, 220)
-    const scaleHint = assignmentScale === 'large'
-      ? 'This looks like a larger assignment, so planning it early is smart.'
-      : assignmentScale === 'medium'
-        ? 'This looks like a medium-sized assignment, so we can build a clean day-by-day plan.'
-        : 'This looks manageable, and we can still make the plan very specific.'
-
+  const buildInitialMessages = (_assignmentContent: string): Message[] => {
     return [
       {
         role: 'assistant',
-        content: `I reviewed your assignment transcript. ${scaleHint}`,
+        content: "I reviewed your assignment transcript.",
       },
       {
         role: 'assistant',
-        content: preview
-          ? `What I picked up from your assignment:\n\n"${preview}${assignmentContent.length > 220 ? '...' : ''}"\n\nWhen do you want this completed?`
-          : 'When do you want this completed?',
+        content: 'When do you want this completed?',
       },
     ]
   }
@@ -521,7 +512,10 @@ function AssignmentHelperContent() {
       const assistantMessage = data.reply || 'Got it. Tell me a bit more about your timeline for this assignment.'
       const updatedMessages: Message[] = [
         ...newMessages,
-        { role: 'assistant', content: assistantMessage },
+        {
+          role: 'assistant',
+          content: data.readyForPlan ? 'Perfect. Creating your assignment plan now...' : assistantMessage,
+        },
       ]
       setMessages(updatedMessages)
       setLoading(false)

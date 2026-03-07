@@ -1,6 +1,60 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+const INTERNAL_REQUEST_TIMEOUT_MS = 90000
+const JOB_META_KEY = '__job'
+
+function normalizeTopic(rawTopic: string): string {
+  return decodeURIComponent(rawTopic || '').trim().replace(/\s+/g, ' ')
+}
+
+function getJobMeta(structuredNotes: unknown): { status?: string; error?: string } | null {
+  if (!structuredNotes || typeof structuredNotes !== 'object') return null
+  const value = structuredNotes as Record<string, unknown>
+  if (!(JOB_META_KEY in value)) return null
+  const job = value[JOB_META_KEY]
+  if (!job || typeof job !== 'object') return null
+  const cast = job as Record<string, unknown>
+  return {
+    status: typeof cast.status === 'string' ? cast.status : undefined,
+    error: typeof cast.error === 'string' ? cast.error : undefined,
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function fetchWithRetry(url: string, init: RequestInit, attempts = 2): Promise<Response> {
+  let lastError: unknown = null
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const response = await fetchWithTimeout(url, init, INTERNAL_REQUEST_TIMEOUT_MS)
+      if (response.ok) return response
+
+      // Retry only on server/transient errors
+      if (response.status >= 500 && i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 400 * (i + 1)))
+        continue
+      }
+      return response
+    } catch (error) {
+      lastError = error
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 400 * (i + 1)))
+        continue
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Request failed')
+}
+
 /**
  * GET or POST: Get notes for a topic (cached) or generate and cache.
  * GET: ?examId=X&topic=Y - returns cached notes if exists
@@ -29,31 +83,54 @@ export async function GET(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const normalizedTopic = normalizeTopic(topic)
+
   const { data: cached } = await supabase
     .from('exam_topic_notes')
     .select('prepared_notes, structured_notes')
     .eq('exam_id', examId)
     .eq('user_id', user.id)
-    .eq('topic', decodeURIComponent(topic))
+    .eq('topic', normalizedTopic)
     .maybeSingle()
 
   if (cached) {
+    const jobMeta = getJobMeta(cached.structured_notes)
+    if (jobMeta?.status && jobMeta.status !== 'completed') {
+      return NextResponse.json({
+        preparedNotes: null,
+        structuredNotes: null,
+        fromCache: false,
+        processing: true,
+        status: jobMeta.status,
+        error: jobMeta.error || null,
+      })
+    }
+
     return NextResponse.json({
       preparedNotes: cached.prepared_notes,
       structuredNotes: cached.structured_notes,
       fromCache: true,
+      processing: false,
+      status: 'completed',
     })
   }
 
-  return NextResponse.json({ fromCache: false, preparedNotes: null, structuredNotes: null })
+  return NextResponse.json({
+    fromCache: false,
+    preparedNotes: null,
+    structuredNotes: null,
+    processing: false,
+    status: 'not_found',
+  })
 }
 
 export async function POST(req: Request) {
   try {
-    const { examId, topic } = await req.json()
+    const { examId, topic, async: asyncMode } = await req.json()
     if (!examId || !topic) {
       return NextResponse.json({ error: 'examId and topic are required' }, { status: 400 })
     }
+    const normalizedTopic = normalizeTopic(topic)
 
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
     if (!authHeader) {
@@ -77,14 +154,58 @@ export async function POST(req: Request) {
       .select('prepared_notes, structured_notes')
       .eq('exam_id', examId)
       .eq('user_id', user.id)
-      .eq('topic', topic)
+      .eq('topic', normalizedTopic)
       .maybeSingle()
 
     if (cached) {
+      const jobMeta = getJobMeta(cached.structured_notes)
+      if (jobMeta?.status && jobMeta.status !== 'completed') {
+        return NextResponse.json({
+          preparedNotes: null,
+          structuredNotes: null,
+          fromCache: false,
+          processing: true,
+          status: jobMeta.status,
+          error: jobMeta.error || null,
+        })
+      }
+
       return NextResponse.json({
         preparedNotes: cached.prepared_notes,
         structuredNotes: cached.structured_notes,
         fromCache: true,
+        processing: false,
+        status: 'completed',
+      })
+    }
+
+    if (asyncMode) {
+      await supabase
+        .from('exam_topic_notes')
+        .upsert(
+          {
+            exam_id: examId,
+            user_id: user.id,
+            topic: normalizedTopic,
+            prepared_notes: null,
+            structured_notes: {
+              [JOB_META_KEY]: {
+                status: 'pending',
+                queued_at: new Date().toISOString(),
+              },
+            },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'exam_id,user_id,topic' }
+        )
+
+      return NextResponse.json({
+        queued: true,
+        processing: true,
+        status: 'pending',
+        preparedNotes: null,
+        structuredNotes: null,
+        topic: normalizedTopic,
       })
     }
 
@@ -98,8 +219,8 @@ export async function POST(req: Request) {
     const relevantDocs = (documents || []).filter(d =>
       !d.topics || d.topics.length === 0 ||
       d.topics.some((t: string) =>
-        t.toLowerCase().includes(topic.toLowerCase()) ||
-        topic.toLowerCase().includes(t.toLowerCase())
+        t.toLowerCase().includes(normalizedTopic.toLowerCase()) ||
+        normalizedTopic.toLowerCase().includes(t.toLowerCase())
       )
     )
 
@@ -124,10 +245,10 @@ export async function POST(req: Request) {
         baseUrl = `https://${process.env.VERCEL_URL}`
       }
     } catch (_) {}
-    const prepareRes = await fetch(`${baseUrl}/api/exam/prepare-topic-notes`, {
+    const prepareRes = await fetchWithRetry(`${baseUrl}/api/exam/prepare-topic-notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader },
-      body: JSON.stringify({ documents: docsForAPI, topic }),
+      body: JSON.stringify({ documents: docsForAPI, topic: normalizedTopic }),
     })
 
     if (!prepareRes.ok) {
@@ -142,10 +263,10 @@ export async function POST(req: Request) {
     }
 
     // Step 2: Generate structured notes
-    const notesRes = await fetch(`${baseUrl}/api/exam/generate-notes`, {
+    const notesRes = await fetchWithRetry(`${baseUrl}/api/exam/generate-notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader },
-      body: JSON.stringify({ examId, topic, notes: preparedNotes }),
+      body: JSON.stringify({ examId, topic: normalizedTopic, notes: preparedNotes }),
     })
 
     if (!notesRes.ok) {
@@ -163,7 +284,7 @@ export async function POST(req: Request) {
         .upsert({
           exam_id: examId,
           user_id: user.id,
-          topic,
+          topic: normalizedTopic,
           prepared_notes: preparedNotes,
           structured_notes: structuredNotes || {},
           updated_at: new Date().toISOString(),
@@ -176,6 +297,8 @@ export async function POST(req: Request) {
       preparedNotes,
       structuredNotes: structuredNotes || {},
       fromCache: false,
+      processing: false,
+      status: 'completed',
     })
   } catch (error: any) {
     console.error('topic-notes error:', error)
