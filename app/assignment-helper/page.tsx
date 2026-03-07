@@ -519,7 +519,10 @@ function AssignmentHelperContent() {
       }
 
       const assistantMessage = data.reply || 'Got it. Tell me a bit more about your timeline for this assignment.'
-      const updatedMessages = [...newMessages, { role: 'assistant', content: assistantMessage }]
+      const updatedMessages: Message[] = [
+        ...newMessages,
+        { role: 'assistant', content: assistantMessage },
+      ]
       setMessages(updatedMessages)
       setLoading(false)
 
@@ -542,7 +545,10 @@ function AssignmentHelperContent() {
           ? 'Great. How many hours per day can you realistically dedicate to this assignment?'
           : "Perfect. I'm creating your assignment plan now."
 
-      const updatedMessages = [...newMessages, { role: 'assistant', content: fallback }]
+      const updatedMessages: Message[] = [
+        ...newMessages,
+        { role: 'assistant', content: fallback },
+      ]
       setMessages(updatedMessages)
       setLoading(false)
 
