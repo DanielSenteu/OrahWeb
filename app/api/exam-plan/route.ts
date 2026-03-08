@@ -23,6 +23,22 @@ export async function POST(req: Request) {
       examId = null, // Optional exam ID from course context
       courseId = null // Optional course ID
     } = await req.json()
+
+    const getBaseUrl = () => {
+      try {
+        const host = req.headers.get('host')
+        if (host) {
+          const proto = req.headers.get('x-forwarded-proto') || 'https'
+          return `${proto}://${host}`
+        }
+        if (process.env.VERCEL_URL) {
+          return `https://${process.env.VERCEL_URL}`
+        }
+      } catch {
+        // fallback below
+      }
+      return 'http://localhost:3000'
+    }
     
     if (!courseName || !totalChapters || !hoursPerDay || !examDate || !userId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -205,6 +221,22 @@ export async function POST(req: Request) {
           console.warn('Exam plan link warning:', examPlanError)
         }
       }
+
+      // Fire-and-forget precompute: generate topic notes + quizzes per plan task.
+      const baseUrl = getBaseUrl()
+      fetch(`${baseUrl}/api/exam/precompute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authHeader,
+        },
+        body: JSON.stringify({
+          examId: resolvedExamId,
+          goalId: data.goalId,
+        }),
+      }).catch((precomputeError) => {
+        console.warn('Exam precompute kickoff warning:', precomputeError)
+      })
     }
 
     return NextResponse.json({

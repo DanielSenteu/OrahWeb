@@ -117,6 +117,22 @@ export default function ExamStudyDashboardPage() {
         return
       }
 
+      // Warm notes + quizzes asynchronously for this exam plan.
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (token) {
+        fetch('/api/exam/precompute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ examId, goalId }),
+        }).catch(() => {
+          // best effort warm-up only
+        })
+      }
+
       const { data: tasksData } = await supabase
         .from('task_items')
         .select('id, title, day_number, scheduled_date_key, is_completed, estimated_minutes')

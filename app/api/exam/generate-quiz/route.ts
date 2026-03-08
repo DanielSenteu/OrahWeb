@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 
 const QUIZ_TABLES = ['exam_quiz_questions', 'exam_quiz_uestions'] as const
-const QUIZ_MODEL_TIMEOUT_MS = 75000
+const QUIZ_MODEL_TIMEOUT_MS = 20000
 const MAX_NOTES_CHARS_FOR_QUIZ = 26000
 
 function normalizeTopic(rawTopic: string): string {
@@ -39,6 +39,53 @@ async function fetchCachedQuestions(supabase: any, examId: string, topic: string
     .eq('user_id', userId)
     .limit(10)
   return { data: error ? null : data, error }
+}
+
+function buildFallbackQuizQuestions(topic: string, notes: string) {
+  const lines = notes
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 30)
+    .slice(0, 40)
+
+  const fallbackLines = lines.length > 0
+    ? lines
+    : [
+        `${topic} focuses on core concepts, definitions, and practical application.`,
+        `Understanding ${topic} requires connecting key ideas and examples.`,
+        `Practice and review improve retention for ${topic}.`,
+      ]
+
+  const pool = Array.from(new Set(fallbackLines))
+  const questions = [] as Array<{
+    question_text: string
+    options: Array<{ id: string; text: string }>
+    correct_answer_id: string
+    explanation: string
+    incorrect_explanation: string
+  }>
+
+  for (let i = 0; i < 10; i++) {
+    const correct = pool[i % pool.length]
+    const distractor1 = pool[(i + 1) % pool.length]
+    const distractor2 = pool[(i + 2) % pool.length]
+    const distractor3 = pool[(i + 3) % pool.length]
+
+    questions.push({
+      question_text: `Which statement is best supported by the study notes for "${topic}"?`,
+      options: [
+        { id: 'A', text: correct },
+        { id: 'B', text: distractor1 },
+        { id: 'C', text: distractor2 },
+        { id: 'D', text: distractor3 },
+      ],
+      correct_answer_id: 'A',
+      explanation: 'This option matches the extracted notes most directly.',
+      incorrect_explanation: 'The selected option is less aligned with the extracted notes than the best-supported statement.',
+    })
+  }
+
+  return questions
 }
 
 export async function GET(req: Request) {
@@ -90,10 +137,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured on the server' }, { status: 500 })
-  }
-  const anthropic = new Anthropic()
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY
+  const anthropic = hasAnthropic ? new Anthropic() : null
 
   try {
     const { examId, topic, notes } = await req.json()
@@ -177,51 +222,49 @@ Return a JSON array with this EXACT structure:
   }
 ]`
 
-    let response: Awaited<ReturnType<typeof anthropic.messages.create>> | null = null
+    let response: Awaited<ReturnType<Anthropic['messages']['create']>> | null = null
     let modelError: unknown = null
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), QUIZ_MODEL_TIMEOUT_MS)
-      try {
-        response = await anthropic.messages.create(
-          {
-            model: 'claude-sonnet-4-6',
-            max_tokens: 5000,
-            system: 'You are an expert at creating educational quiz questions. Return ONLY a valid JSON array, no markdown or explanation.',
-            messages: [{ role: 'user', content: prompt }],
-          },
-          { signal: controller.signal }
-        )
-        clearTimeout(timeout)
-        break
-      } catch (error) {
-        clearTimeout(timeout)
-        modelError = error
-        if (attempt < 1) {
-          await new Promise((r) => setTimeout(r, 500))
-          continue
+    if (anthropic) {
+      for (let attempt = 0; attempt < 1; attempt++) {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), QUIZ_MODEL_TIMEOUT_MS)
+        try {
+          response = await anthropic.messages.create(
+            {
+              model: 'claude-sonnet-4-6',
+              max_tokens: 5000,
+              system: 'You are an expert at creating educational quiz questions. Return ONLY a valid JSON array, no markdown or explanation.',
+              messages: [{ role: 'user', content: prompt }],
+            },
+            { signal: controller.signal }
+          )
+          clearTimeout(timeout)
+          break
+        } catch (error) {
+          clearTimeout(timeout)
+          modelError = error
         }
       }
     }
 
-    if (!response) {
-      const errMsg = modelError instanceof Error ? modelError.message : 'Quiz generation timed out'
-      return NextResponse.json({ error: errMsg }, { status: 504 })
-    }
-
-    const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const cleanedQuiz = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
     let questionsData: any[] = []
+    if (response) {
+      const rawText = response.content[0]?.type === 'text' ? response.content[0].text : ''
+      const cleanedQuiz = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
 
-    try {
-      questionsData = JSON.parse(cleanedQuiz)
-    } catch {
-      const arrayMatch = cleanedQuiz.match(/\[[\s\S]*\]/)
-      if (arrayMatch) questionsData = JSON.parse(arrayMatch[0])
+      try {
+        questionsData = JSON.parse(cleanedQuiz)
+      } catch {
+        const arrayMatch = cleanedQuiz.match(/\[[\s\S]*\]/)
+        if (arrayMatch) questionsData = JSON.parse(arrayMatch[0])
+      }
     }
 
     if (!Array.isArray(questionsData) || questionsData.length === 0) {
-      return NextResponse.json({ error: 'Failed to generate questions' }, { status: 500 })
+      if (modelError) {
+        console.warn('Quiz model fallback activated:', modelError instanceof Error ? modelError.message : String(modelError))
+      }
+      questionsData = buildFallbackQuizQuestions(normalizedTopic, notesForPrompt)
     }
 
     const questionsToSave = questionsData.slice(0, 10)

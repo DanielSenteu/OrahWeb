@@ -126,23 +126,11 @@ export default function SyllabusUploadPage() {
     toast.success('File removed')
   }
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(',')[1]
-        resolve(base64)
-      }
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
-  const extractTextFromPDF = async (base64Pdf: string): Promise<string> => {
+  const extractTextFromPDF = async (filePath: string): Promise<string> => {
     const res = await fetch('/api/pdf/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdf: base64Pdf }),
+      body: JSON.stringify({ filePath, bucket: 'course-documents' }),
     })
 
     if (!res.ok) {
@@ -181,13 +169,6 @@ export default function SyllabusUploadPage() {
         const file = files[i]
         toast.loading(`Extracting text from ${file.name} (${i + 1}/${files.length})...`, { id: `extract-${i}` })
 
-        // Convert to base64
-        const base64Pdf = await fileToBase64(file)
-
-        // Extract text
-        const text = await extractTextFromPDF(base64Pdf)
-        extractedTexts.push(text)
-
         // Upload PDF to Storage
         // Structure: {user_id}/{course_id}/syllabus/{timestamp}_{filename}
         const fileName = `${user.id}/${courseId}/syllabus/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
@@ -203,7 +184,13 @@ export default function SyllabusUploadPage() {
           throw new Error(`Failed to upload ${file.name}`)
         }
 
-        pdfUrls.push(fileName)
+        const uploadedPath = uploadData?.path || fileName
+
+        // Extract text from storage path (avoids large base64 request payloads)
+        const text = await extractTextFromPDF(uploadedPath)
+        extractedTexts.push(text)
+
+        pdfUrls.push(uploadedPath)
         toast.success(`Extracted text from ${file.name}`, { id: `extract-${i}` })
       }
 
