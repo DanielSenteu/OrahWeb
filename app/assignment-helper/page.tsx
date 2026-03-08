@@ -592,6 +592,7 @@ function AssignmentHelperContent() {
           assignmentContent: extractedContent,
           dueDate: planDueDate,
           hoursPerDay: planHoursPerDay,
+          assignmentId: assignmentId || null,
           courseId: courseId || null,
         }),
       }).catch((e) => {

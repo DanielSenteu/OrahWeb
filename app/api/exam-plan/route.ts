@@ -33,7 +33,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing auth token' }, { status: 401 })
     }
 
-    // Initialize Supabase with auth
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -44,11 +43,65 @@ export async function POST(req: Request) {
       }
     )
 
+    let resolvedCourseId: string | null = courseId || null
+    let resolvedExamId: string | null = examId || null
+    let resolvedExamName: string = (courseName || 'Exam').trim()
+
+    if (resolvedExamId) {
+      const { data: existingExam } = await supabase
+        .from('course_exams')
+        .select('id, exam_name, course_id')
+        .eq('id', resolvedExamId)
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (existingExam) {
+        resolvedExamName = existingExam.exam_name || resolvedExamName
+        resolvedCourseId = existingExam.course_id || resolvedCourseId
+      }
+    }
+
+    if (resolvedCourseId && !resolvedExamId) {
+      const { data: existingCourseExam } = await supabase
+        .from('course_exams')
+        .select('id, exam_name')
+        .eq('course_id', resolvedCourseId)
+        .eq('user_id', userId)
+        .eq('exam_name', resolvedExamName)
+        .eq('exam_date', examDate)
+        .maybeSingle()
+
+      if (existingCourseExam?.id) {
+        resolvedExamId = existingCourseExam.id
+        resolvedExamName = existingCourseExam.exam_name || resolvedExamName
+      } else {
+        const { data: insertedExam, error: insertExamError } = await supabase
+          .from('course_exams')
+          .insert({
+            course_id: resolvedCourseId,
+            user_id: userId,
+            exam_name: resolvedExamName,
+            exam_date: examDate,
+            topics: [],
+            status: 'studying',
+          })
+          .select('id, exam_name')
+          .single()
+
+        if (insertExamError) {
+          console.warn('Could not create course exam record:', insertExamError)
+        } else {
+          resolvedExamId = insertedExam?.id || null
+          resolvedExamName = insertedExam?.exam_name || resolvedExamName
+        }
+      }
+    }
+
     // SAVE DOCUMENTS FIRST - before edge function - so we never lose them
-    if (examId && Array.isArray(documents) && documents.length > 0) {
+    if (resolvedExamId && Array.isArray(documents) && documents.length > 0) {
       try {
         const docsToInsert = documents.map((d: { name?: string; type?: string; text?: string }) => ({
-          exam_id: examId,
+          exam_id: resolvedExamId,
           user_id: userId,
           document_name: d.name || 'Untitled',
           document_type: (d.type === 'application/pdf' || d.type?.includes?.('pdf')) ? 'pdf' :
@@ -90,8 +143,8 @@ export async function POST(req: Request) {
           examDate,
           studyMaterials: allNotes, // Combined notes from all documents
           documents: documents, // Pass documents for topic extraction
-          examId: examId || null, // Pass examId if provided (from request body)
-          courseId: courseId || null, // Pass courseId if provided (from request body)
+          examId: resolvedExamId || null,
+          courseId: resolvedCourseId || null,
         }),
     })
 
@@ -104,18 +157,8 @@ export async function POST(req: Request) {
 
     console.log('✅ Exam plan created:', data.goalId)
 
-    // Set as active goal
+    // Set as active goal + persist exam/course linkage
     if (data.success && data.goalId) {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          global: {
-            headers: { Authorization: authHeader },
-          },
-        }
-      )
-
       await supabase
         .from('user_preferences')
         .upsert(
@@ -125,9 +168,51 @@ export async function POST(req: Request) {
           },
           { onConflict: 'user_id' }
         )
+
+      const goalSummary = resolvedExamName.toLowerCase().startsWith('exam:')
+        ? resolvedExamName
+        : `Exam: ${resolvedExamName}`
+
+      const { error: goalLinkError } = await supabase
+        .from('user_goals')
+        .update({
+          summary: goalSummary,
+          course_id: resolvedCourseId,
+          exam_id: resolvedExamId,
+        } as any)
+        .eq('id', data.goalId)
+        .eq('user_id', userId)
+
+      if (goalLinkError) {
+        console.warn('Goal link update warning:', goalLinkError)
+      }
+
+      if (resolvedExamId) {
+        const { error: examPlanError } = await supabase
+          .from('course_exams')
+          .update({
+            study_plan: {
+              created: true,
+              goal_id: data.goalId,
+              created_at: new Date().toISOString(),
+            },
+            status: 'studying',
+          })
+          .eq('id', resolvedExamId)
+          .eq('user_id', userId)
+
+        if (examPlanError) {
+          console.warn('Exam plan link warning:', examPlanError)
+        }
+      }
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json({
+      ...data,
+      examId: resolvedExamId,
+      courseId: resolvedCourseId,
+      examName: resolvedExamName,
+    })
   } catch (error: any) {
     console.error('exam-plan route error', error)
     return NextResponse.json({ error: 'Server error', details: error?.message }, { status: 500 })

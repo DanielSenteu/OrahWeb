@@ -154,10 +154,6 @@ export default function SignupPage() {
             <span>{gmailLoading ? 'Connecting...' : 'Continue with Google'}</span>
           </button>
 
-          <Link href="/integrations/canvas?intent=signup" className="btn-canvas">
-            <span>Continue with Canvas (Beta)</span>
-          </Link>
-
           <div className="divider">
             <span className="divider-text">or</span>
           </div>

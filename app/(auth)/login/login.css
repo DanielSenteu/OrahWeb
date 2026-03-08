@@ -296,19 +296,6 @@
   box-shadow: 0 8px 24px -8px rgba(255, 255, 255, 0.2);
 }
 
-.btn-canvas {
-  margin-bottom: 1.5rem;
-  border: 1.5px solid rgba(34, 211, 238, 0.35);
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(59, 130, 246, 0.12));
-  color: #CFFAFE;
-}
-
-.btn-canvas:hover {
-  border-color: rgba(34, 211, 238, 0.55);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 26px -12px rgba(34, 211, 238, 0.45);
-}
-
 .google-icon {
   width: 20px;
   height: 20px;

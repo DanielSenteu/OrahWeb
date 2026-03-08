@@ -15,6 +15,7 @@ export async function POST(req: Request) {
       assignmentContent,
       dueDate,
       hoursPerDay,
+      assignmentId,
       courseId,
     } = await req.json()
     
@@ -25,6 +26,63 @@ export async function POST(req: Request) {
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
     if (!authHeader) {
       return NextResponse.json({ error: 'Missing auth token' }, { status: 401 })
+    }
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: { Authorization: authHeader },
+        },
+      }
+    )
+
+    let resolvedAssignmentId: string | null = assignmentId || null
+
+    const deriveAssignmentName = (content: string) => {
+      const firstLine = content
+        .split(/\r?\n/)
+        .map((line: string) => line.trim())
+        .find((line: string) => line.length > 0)
+      if (!firstLine) return 'Assignment'
+      return firstLine.slice(0, 120)
+    }
+
+    if (courseId && !resolvedAssignmentId) {
+      const assignmentName = deriveAssignmentName(assignmentContent)
+
+      const { data: existingAssignment } = await supabase
+        .from('course_assignments')
+        .select('id')
+        .eq('course_id', courseId)
+        .eq('user_id', userId)
+        .eq('assignment_name', assignmentName)
+        .eq('due_date', dueDate)
+        .maybeSingle()
+
+      if (existingAssignment?.id) {
+        resolvedAssignmentId = existingAssignment.id
+      } else {
+        const { data: insertedAssignment, error: insertAssignmentError } = await supabase
+          .from('course_assignments')
+          .insert({
+            course_id: courseId,
+            user_id: userId,
+            assignment_name: assignmentName,
+            description: assignmentContent.slice(0, 5000),
+            due_date: dueDate,
+            status: 'in_progress',
+          })
+          .select('id')
+          .single()
+
+        if (insertAssignmentError) {
+          console.warn('Could not create course assignment record:', insertAssignmentError)
+        } else {
+          resolvedAssignmentId = insertedAssignment?.id || null
+        }
+      }
     }
 
     console.log('📝 Calling assignment helper edge function...')
@@ -42,6 +100,7 @@ export async function POST(req: Request) {
         assignmentContent,
         dueDate,
         hoursPerDay,
+        assignmentId: resolvedAssignmentId,
         courseId: courseId || null,
       }),
     })
@@ -55,18 +114,8 @@ export async function POST(req: Request) {
 
     console.log('✅ Assignment plan created:', data.goalId)
 
-    // Set as active goal
+    // Set as active goal + link goal to course assignment context
     if (data.success && data.goalId) {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          global: {
-            headers: { Authorization: authHeader },
-          },
-        }
-      )
-
       await supabase
         .from('user_preferences')
         .upsert(
@@ -76,9 +125,46 @@ export async function POST(req: Request) {
           },
           { onConflict: 'user_id' }
         )
+
+      if (courseId || resolvedAssignmentId) {
+        const { error: goalLinkError } = await supabase
+          .from('user_goals')
+          .update({
+            course_id: courseId || null,
+            assignment_id: resolvedAssignmentId,
+          } as any)
+          .eq('id', data.goalId)
+          .eq('user_id', userId)
+
+        if (goalLinkError) {
+          console.warn('Goal link update warning:', goalLinkError)
+        }
+      }
+
+      if (resolvedAssignmentId) {
+        const { error: assignmentPlanError } = await supabase
+          .from('course_assignments')
+          .update({
+            step_by_step_plan: {
+              created: true,
+              goal_id: data.goalId,
+              created_at: new Date().toISOString(),
+            },
+            status: 'in_progress',
+          })
+          .eq('id', resolvedAssignmentId)
+          .eq('user_id', userId)
+
+        if (assignmentPlanError) {
+          console.warn('Assignment plan link warning:', assignmentPlanError)
+        }
+      }
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json({
+      ...data,
+      assignmentId: resolvedAssignmentId,
+    })
   } catch (error: any) {
     console.error('assignment-plan route error', error)
     return NextResponse.json({ error: 'Server error', details: error?.message }, { status: 500 })

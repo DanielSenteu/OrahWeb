@@ -143,10 +143,6 @@ export default function LoginPage() {
             <span>{gmailLoading ? 'Connecting...' : 'Continue with Gmail'}</span>
           </button>
 
-          <Link href="/integrations/canvas?intent=login" className="btn btn-canvas">
-            <span>Continue with Canvas (Beta)</span>
-          </Link>
-
           <div className="divider">
             <span className="divider-text">or continue with email</span>
           </div>
