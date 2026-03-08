@@ -180,14 +180,14 @@ export async function POST(req: Request) {
     }
 
     if (asyncMode) {
-      await supabase
+      const { error: queueError } = await supabase
         .from('exam_topic_notes')
         .upsert(
           {
             exam_id: examId,
             user_id: user.id,
             topic: normalizedTopic,
-            prepared_notes: null,
+            prepared_notes: '',
             structured_notes: {
               [JOB_META_KEY]: {
                 status: 'pending',
@@ -198,6 +198,14 @@ export async function POST(req: Request) {
           },
           { onConflict: 'exam_id,user_id,topic' }
         )
+
+      if (queueError) {
+        console.error('Failed to queue topic-notes job:', queueError)
+        return NextResponse.json(
+          { error: 'Failed to queue topic notes generation', details: queueError.message },
+          { status: 500 }
+        )
+      }
 
       return NextResponse.json({
         queued: true,

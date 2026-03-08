@@ -64,14 +64,14 @@ export async function POST(req: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // Mark row as processing.
-    await supabase
+    const { error: markProcessingError } = await supabase
       .from('exam_topic_notes')
       .upsert(
         {
           exam_id: examId,
           user_id: user.id,
           topic: normalizedTopic,
-          prepared_notes: null,
+          prepared_notes: '',
           structured_notes: {
             [JOB_META_KEY]: {
               status: 'processing',
@@ -82,6 +82,13 @@ export async function POST(req: Request) {
         },
         { onConflict: 'exam_id,user_id,topic' }
       )
+
+    if (markProcessingError) {
+      return NextResponse.json(
+        { error: 'Failed to mark topic-notes job as processing', details: markProcessingError.message },
+        { status: 500 }
+      )
+    }
 
     // Fetch documents for this exam/topic.
     const { data: documents } = await supabase
@@ -100,14 +107,14 @@ export async function POST(req: Request) {
     )
 
     if (relevantDocs.length === 0) {
-      await supabase
+      const { error: markFailedNoDocsError } = await supabase
         .from('exam_topic_notes')
         .upsert(
           {
             exam_id: examId,
             user_id: user.id,
             topic: normalizedTopic,
-            prepared_notes: null,
+            prepared_notes: '',
             structured_notes: {
               [JOB_META_KEY]: {
                 status: 'failed',
@@ -119,6 +126,10 @@ export async function POST(req: Request) {
           },
           { onConflict: 'exam_id,user_id,topic' }
         )
+
+      if (markFailedNoDocsError) {
+        console.error('Failed to mark topic-notes failure (no docs):', markFailedNoDocsError)
+      }
 
       return NextResponse.json({ processing: false, status: 'failed', error: 'No documents found for this topic.' }, { status: 404 })
     }
@@ -200,14 +211,14 @@ export async function POST(req: Request) {
           )
           const { data: { user } } = await supabase.auth.getUser()
           if (user) {
-            await supabase
+            const { error: markFailedError } = await supabase
               .from('exam_topic_notes')
               .upsert(
                 {
                   exam_id: examId,
                   user_id: user.id,
                   topic: normalizeTopic(topic),
-                  prepared_notes: null,
+                  prepared_notes: '',
                   structured_notes: {
                     [JOB_META_KEY]: {
                       status: 'failed',
@@ -219,6 +230,10 @@ export async function POST(req: Request) {
                 },
                 { onConflict: 'exam_id,user_id,topic' }
               )
+
+            if (markFailedError) {
+              console.error('Failed to mark topic-notes failure:', markFailedError)
+            }
           }
         }
       }
