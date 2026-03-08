@@ -72,7 +72,7 @@ export default function QuizPage() {
 
       // 2. No cache - get notes from topic-notes (cached or async-generated), then generate quiz
       let notes = ''
-      const pollForPreparedNotes = async (maxAttempts = 45, intervalMs = 2000) => {
+      const pollForPreparedNotes = async (maxAttempts = 75, intervalMs = 2000) => {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           const res = await fetch(
             `/api/exam/topic-notes?examId=${examId}&topic=${encodeURIComponent(decodedTopic)}`,
@@ -94,12 +94,12 @@ export default function QuizPage() {
           }
 
           if (data?.status === 'failed') {
-            throw new Error(data?.error || 'Failed to generate notes for this topic')
+            return ''
           }
 
           await new Promise((r) => setTimeout(r, intervalMs))
         }
-        throw new Error('Timed out while preparing topic notes. Please try again.')
+        return ''
       }
 
       const notesRes = await fetch(
@@ -133,6 +133,7 @@ export default function QuizPage() {
       }
       // Fallback: get notes directly from documents if topic-notes fails
       if (!notes) {
+        setLoadingMessage('Falling back to source documents...')
         const { data: docs } = await supabase
           .from('exam_documents')
           .select('document_name, extracted_text, topics')

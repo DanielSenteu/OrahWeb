@@ -57,7 +57,7 @@ export default function ExamStudyDashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
-  const [topicNotes, setTopicNotes] = useState<Record<string, { loading?: boolean; data?: any; error?: string }>>({})
+  const [topicNotes, setTopicNotes] = useState<Record<string, { loading?: boolean; loadingMessage?: string; data?: any; error?: string }>>({})
   const [generatingTopic, setGeneratingTopic] = useState<string | null>(null)
 
   useEffect(() => {
@@ -161,35 +161,103 @@ export default function ExamStudyDashboardPage() {
   async function loadNotesForTopic(topic: string) {
     if (topicNotes[topic]?.data) return
 
-    setTopicNotes(prev => ({ ...prev, [topic]: { loading: true } }))
+    setTopicNotes(prev => ({ ...prev, [topic]: { loading: true, loadingMessage: 'Preparing notes for this topic...' } }))
     setGeneratingTopic(topic)
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
 
-      const res = await fetch('/api/exam/topic-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ examId, topic }),
-      })
+      const auth = `Bearer ${session.access_token}`
+      const readCache = async () => {
+        const res = await fetch(
+          `/api/exam/topic-notes?examId=${examId}&topic=${encodeURIComponent(topic)}`,
+          { headers: { Authorization: auth } }
+        )
+        if (!res.ok) return null
+        return res.json()
+      }
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        setTopicNotes(prev => ({ ...prev, [topic]: { error: data.error || 'Failed to load notes' } }))
+      // 1) Cache hit path.
+      const cached = await readCache()
+      if (cached && (cached.structuredNotes || cached.preparedNotes)) {
+        setTopicNotes(prev => ({
+          ...prev,
+          [topic]: {
+            data: { structuredNotes: cached.structuredNotes, preparedNotes: cached.preparedNotes },
+          },
+        }))
         return
       }
 
-      setTopicNotes(prev => ({
-        ...prev,
-        [topic]: { data: { structuredNotes: data.structuredNotes, preparedNotes: data.preparedNotes } },
-      }))
+      // 2) Queue async generation marker.
+      await fetch('/api/exam/topic-notes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: auth,
+        },
+        body: JSON.stringify({ examId, topic, async: true }),
+      })
+
+      // 3) Trigger processing in background.
+      fetch('/api/exam/topic-notes/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: auth,
+        },
+        body: JSON.stringify({ examId, topic }),
+      }).catch(() => {
+        // best-effort background trigger
+      })
+
+      // 4) Poll with progress-style status updates.
+      for (let attempt = 0; attempt < 45; attempt++) {
+        const current = await readCache()
+        let loadingMessage = 'Preparing notes...'
+        if (current?.status === 'pending') {
+          loadingMessage = 'Preparing notes queue...'
+        } else if (current?.status === 'processing') {
+          loadingMessage = 'Processing topic notes...'
+        } else {
+          const pct = Math.min(95, Math.round(((attempt + 1) / 45) * 100))
+          loadingMessage = `Preparing notes... ${pct}%`
+        }
+
+        setTopicNotes(prev => ({
+          ...prev,
+          [topic]: {
+            loading: true,
+            loadingMessage,
+          },
+        }))
+
+        if (current?.structuredNotes || current?.preparedNotes) {
+          setTopicNotes(prev => ({
+            ...prev,
+            [topic]: {
+              data: { structuredNotes: current.structuredNotes, preparedNotes: current.preparedNotes },
+            },
+          }))
+          return
+        }
+
+        if (current?.status === 'failed') {
+          setTopicNotes(prev => ({ ...prev, [topic]: { error: 'Failed to load notes' } }))
+          return
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+      }
+
+      setTopicNotes(prev => ({ ...prev, [topic]: { error: 'Notes are taking longer than expected. Please retry in a moment.' } }))
     } catch (error: any) {
-      setTopicNotes(prev => ({ ...prev, [topic]: { error: error.message || 'Failed to load notes' } }))
+      const rawMessage = error?.message || 'Failed to load notes'
+      const friendlyMessage = /server error/i.test(rawMessage)
+        ? 'We could not prepare notes yet. Try again in a moment.'
+        : rawMessage
+      setTopicNotes(prev => ({ ...prev, [topic]: { error: friendlyMessage } }))
     } finally {
       setGeneratingTopic(null)
     }
@@ -333,6 +401,13 @@ export default function ExamStudyDashboardPage() {
                                     )}
                                   </>
                                 )}
+                              </div>
+                            </div>
+                          )}
+                          {notesState?.loading && !notesState?.data && !notesState?.error && (
+                            <div className="study-notes-panel">
+                              <div className="notes-content">
+                                <p>{notesState.loadingMessage || 'Preparing notes...'}</p>
                               </div>
                             </div>
                           )}

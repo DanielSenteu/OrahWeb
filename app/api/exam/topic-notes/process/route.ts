@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const INTERNAL_REQUEST_TIMEOUT_MS = 90000
+const INTERNAL_REQUEST_TIMEOUT_MS = 180000
 const JOB_META_KEY = '__job'
+const MAX_DOCS_FOR_PREP = 8
+const MAX_DOC_CHARS = 45000
+const MAX_FALLBACK_NOTES_CHARS = 30000
 
 function normalizeTopic(rawTopic: string): string {
   return decodeURIComponent(rawTopic || '').trim().replace(/\s+/g, ' ')
@@ -134,10 +137,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ processing: false, status: 'failed', error: 'No documents found for this topic.' }, { status: 404 })
     }
 
-    const docsForAPI = relevantDocs.map((d) => ({
+    const docsForAPI = relevantDocs.slice(0, MAX_DOCS_FOR_PREP).map((d) => ({
       name: d.document_name || 'Document',
-      text: d.extracted_text || '',
+      text: (d.extracted_text || '').slice(0, MAX_DOC_CHARS),
     }))
+
+    const fallbackPreparedNotes = docsForAPI
+      .map((d) => `[From ${d.name}]\n${d.text || ''}`)
+      .join('\n\n---\n\n')
+      .slice(0, MAX_FALLBACK_NOTES_CHARS)
 
     let baseUrl = 'http://localhost:3000'
     try {
@@ -151,34 +159,65 @@ export async function POST(req: Request) {
       // keep fallback
     }
 
-    const prepareRes = await fetchWithRetry(`${baseUrl}/api/exam/prepare-topic-notes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: authHeader },
-      body: JSON.stringify({ documents: docsForAPI, topic: normalizedTopic }),
-    })
+    let preparedNotes = fallbackPreparedNotes
+    try {
+      const prepareRes = await fetchWithRetry(`${baseUrl}/api/exam/prepare-topic-notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader },
+        body: JSON.stringify({ documents: docsForAPI, topic: normalizedTopic }),
+      })
 
-    if (!prepareRes.ok) {
-      const err = await prepareRes.text()
-      throw new Error(`prepare-topic-notes failed: ${err}`)
+      if (prepareRes.ok) {
+        const prepareJson = await prepareRes.json()
+        if (prepareJson?.preparedNotes && prepareJson.preparedNotes.length > 50) {
+          preparedNotes = prepareJson.preparedNotes
+        }
+      }
+    } catch (prepError) {
+      console.warn('prepare-topic-notes fallback in use:', prepError)
     }
 
-    const { preparedNotes } = await prepareRes.json()
     if (!preparedNotes || preparedNotes.length < 50) {
       throw new Error('Insufficient content in documents for this topic')
     }
 
-    const notesRes = await fetchWithRetry(`${baseUrl}/api/exam/generate-notes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: authHeader },
-      body: JSON.stringify({ examId, topic: normalizedTopic, notes: preparedNotes }),
-    })
+    let structuredNotes: Record<string, unknown> | null = null
+    try {
+      const notesRes = await fetchWithRetry(`${baseUrl}/api/exam/generate-notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader },
+        body: JSON.stringify({ examId, topic: normalizedTopic, notes: preparedNotes }),
+      })
 
-    if (!notesRes.ok) {
-      const err = await notesRes.text()
-      throw new Error(`generate-notes failed: ${err}`)
+      if (notesRes.ok) {
+        const notesJson = await notesRes.json()
+        structuredNotes = (notesJson?.notes as Record<string, unknown>) || null
+      } else {
+        const err = await notesRes.text()
+        console.warn('generate-notes failed, falling back:', err)
+      }
+    } catch (notesError) {
+      console.warn('generate-notes fallback in use:', notesError)
     }
 
-    const { notes: structuredNotes } = await notesRes.json()
+    if (!structuredNotes) {
+      const fallbackSummary = preparedNotes.slice(0, 1200)
+      structuredNotes = {
+        title: `Study Notes: ${normalizedTopic}`,
+        summary: fallbackSummary,
+        sections: [
+          {
+            title: 'Extracted Notes',
+            content: preparedNotes
+              .split(/\n+/)
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .slice(0, 20),
+          },
+        ],
+        keyTakeaways: ['Review the extracted notes and then take a quiz to validate understanding.'],
+      }
+    }
 
     await supabase
       .from('exam_topic_notes')
@@ -188,7 +227,7 @@ export async function POST(req: Request) {
           user_id: user.id,
           topic: normalizedTopic,
           prepared_notes: preparedNotes,
-          structured_notes: structuredNotes || {},
+            structured_notes: structuredNotes || {},
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'exam_id,user_id,topic' }

@@ -78,12 +78,29 @@ export default function CourseDashboardPage() {
         const { data: examsData } = await supabase.from('course_exams').select('*').eq('course_id', id).eq('user_id', user.id).order('exam_date', { ascending: true })
         const examsWithPlan = await Promise.all(
           (examsData || []).map(async (exam) => {
-            const { data: goalData } = await supabase.from('user_goals').select('id').eq('user_id', user.id).eq('exam_id', exam.id).maybeSingle()
-            let finalGoal = goalData
-            if (!finalGoal) {
-              const { data: match } = await supabase.from('user_goals').select('id').eq('user_id', user.id).ilike('summary', `%${exam.exam_name}%`).maybeSingle()
-              finalGoal = match
+            const linkedGoalId = exam?.study_plan?.goal_id || null
+            let finalGoal = null as { id: string } | null
+
+            if (linkedGoalId) {
+              const { data: linkedGoal } = await supabase
+                .from('user_goals')
+                .select('id')
+                .eq('id', linkedGoalId)
+                .eq('user_id', user.id)
+                .maybeSingle()
+              finalGoal = linkedGoal
             }
+
+            if (!finalGoal) {
+              const { data: goalData } = await supabase
+                .from('user_goals')
+                .select('id')
+                .eq('user_id', user.id)
+                .eq('exam_id', exam.id)
+                .maybeSingle()
+              finalGoal = goalData
+            }
+
             let firstTaskId = null
             if (finalGoal) {
               const { data: taskData } = await supabase.from('task_items').select('id').eq('goal_id', finalGoal.id).order('day_number', { ascending: true }).limit(1).maybeSingle()
